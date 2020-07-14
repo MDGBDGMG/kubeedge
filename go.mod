@@ -85,6 +85,8 @@ require (
 )
 
 replace (
+	cloud.google.com/go v0.43.0 => github.com/googleapis/google-cloud-go v0.43.0
+	golang.org/x/sys => github.com/golang/sys v0.0.0-20200625212154-ddb9806d33ae
 	github.com/Sirupsen/logrus v1.0.5 => github.com/sirupsen/logrus v1.0.5
 	github.com/Sirupsen/logrus v1.3.0 => github.com/Sirupsen/logrus v1.0.6
 	github.com/Sirupsen/logrus v1.4.0 => github.com/sirupsen/logrus v1.0.6
