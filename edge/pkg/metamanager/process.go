@@ -73,7 +73,7 @@ func sendToCloud(message *model.Message) {
 // return <reskey, restype, resid>
 func parseResource(resource string) (string, string, string) {
 	tokens := strings.Split(resource, constants.ResourceSep)
-	resType := ""
+	resType := "" //将resource的格式转化为<reskey, restype, resid>
 	resID := ""
 	switch len(tokens) {
 	case 2:
@@ -127,29 +127,29 @@ func resourceUnchanged(resType string, resKey string, content []byte) bool {
 func (m *metaManager) processInsert(message model.Message) {
 	var err error
 	var content []byte
-	switch message.GetContent().(type) {
-	case []uint8:
-		content = message.GetContent().([]byte)
+	switch message.GetContent().(type) { //检查content的数据类型
+	case []uint8: //若content的数据类型为无符号8位数组
+		content = message.GetContent().([]byte) //读取content并转化为字节数组
 	default:
-		content, err = json.Marshal(message.GetContent())
+		content, err = json.Marshal(message.GetContent()) //读取content并转化为json
 		if err != nil {
 			klog.Errorf("marshal update message content failed, %s", msgDebugInfo(&message))
 			feedbackError(err, "Error to marshal message content", message)
 			return
 		}
 	}
-	resKey, resType, _ := parseResource(message.GetResource())
+	resKey, resType, _ := parseResource(message.GetResource()) //转化resource的格式
 	switch resType {
-	case constants.ResourceTypeServiceList:
-		var svcList []v1.Service
-		err = json.Unmarshal(content, &svcList)
+	case constants.ResourceTypeServiceList: //若resource的type是servicelist
+		var svcList []v1.Service                //k8sio包里的api
+		err = json.Unmarshal(content, &svcList) //将content解码并写入svcList中
 		if err != nil {
 			klog.Errorf("Unmarshal insert message content failed, %s", msgDebugInfo(&message))
 			feedbackError(err, "Error to unmarshal", message)
 			return
 		}
-		for _, svc := range svcList {
-			data, err := json.Marshal(svc)
+		for _, svc := range svcList { //遍历svcList数组
+			data, err := json.Marshal(svc) //将content转化为json
 			if err != nil {
 				klog.Errorf("Marshal service content failed, %v", svc)
 				continue
@@ -157,8 +157,8 @@ func (m *metaManager) processInsert(message model.Message) {
 			meta := &dao.Meta{
 				Key:   fmt.Sprintf("%s/%s/%s", svc.Namespace, constants.ResourceTypeService, svc.Name),
 				Type:  constants.ResourceTypeService,
-				Value: string(data)}
-			err = dao.SaveMeta(meta)
+				Value: string(data)} //构建matadata结构体
+			err = dao.SaveMeta(meta) //采用orm包里的API将matadata结构体保存到MetaDB中
 			if err != nil {
 				klog.Errorf("Save meta %s failed, svc: %v, err: %v", string(data), svc, err)
 				feedbackError(err, "Error to save meta to DB", message)
@@ -170,7 +170,7 @@ func (m *metaManager) processInsert(message model.Message) {
 			Key:   resKey,
 			Type:  resType,
 			Value: string(content)}
-		err = dao.SaveMeta(meta)
+		err = dao.SaveMeta(meta) //采用orm包里的API将matadata结构体保存到MetaDB中
 		if err != nil {
 			klog.Errorf("save meta failed, %s: %v", msgDebugInfo(&message), err)
 			feedbackError(err, "Error to save meta to DB", message)
@@ -178,23 +178,23 @@ func (m *metaManager) processInsert(message model.Message) {
 		}
 	}
 
-	if resType == constants.ResourceTypeListener {
+	if resType == constants.ResourceTypeListener { //若resource类型为listener
 		// Notify edgemesh only
 		resp := message.NewRespByMessage(&message, nil)
-		sendToEdgeMesh(resp, true)
+		sendToEdgeMesh(resp, true) //发送到EdgeMesh模块的channel中
 		return
 	}
 
-	if isEdgeMeshResource(resType) {
+	if isEdgeMeshResource(resType) { //若resType属于service\servicelist\endpoint\podlist其中之一
 		// Notify edgemesh
-		sendToEdgeMesh(&message, false)
+		sendToEdgeMesh(&message, false) //则非同步方式发送给edgemesh的channel中
 	} else {
 		// Notify edged
-		sendToEdged(&message, false)
+		sendToEdged(&message, false) //若resTpye不属于上述四项tpye，那么发送到edgeed的channel中
 	}
 
-	resp := message.NewRespByMessage(&message, OK)
-	sendToCloud(resp)
+	resp := message.NewRespByMessage(&message, OK) //生成新的respMsg,content属性设置为ok
+	sendToCloud(resp)                              //将resp发送到metaManagerConfig.Config.ContextSendGroup的channel中
 }
 
 func (m *metaManager) processUpdate(message model.Message) {
@@ -497,6 +497,7 @@ func (m *metaManager) processRemoteQuery(message model.Message) {
 	}()
 }
 
+//监听节点连接或断开的操作，修改metaManagerConfig的配置
 func (m *metaManager) processNodeConnection(message model.Message) {
 	content, _ := message.GetContent().(string)
 	klog.Infof("node connection event occur: %s", content)
@@ -633,27 +634,37 @@ func (m *metaManager) process(message model.Message) {
 	operation := message.GetOperation()
 	switch operation {
 	case model.InsertOperation:
-		m.processInsert(message)
+		m.processInsert(message) //DB插入操作
 	case model.UpdateOperation:
-		m.processUpdate(message)
+		m.processUpdate(message) //DB更新操作
 	case model.DeleteOperation:
-		m.processDelete(message)
+		m.processDelete(message) //DB删除操作
 	case model.QueryOperation:
-		m.processQuery(message)
+		m.processQuery(message) //DB查询操作
 	case model.ResponseOperation:
+		//响应操作。
+		//1.将数据insertOrUpdate到DB中；
+		//2.若message来自于edge，则提醒cloud；
+		//3.若message来自于cloud，则提醒edged或edgeMesh
 		m.processResponse(message)
 	case messagepkg.OperationNodeConnection:
+		//监听cloud节点连接/断开操作，以便修改metaManager的配置
+		//若cloud节点连接，则修改metaManagerConfig.Connected = true
+		//若cloud节点断开，则修改metaManagerConfig.Connected = false
 		m.processNodeConnection(message)
 	case OperationMetaSync:
-		m.processSync(message)
+		m.processSync(message) //同步pod的statu到cloud
 	case OperationFunctionAction:
+		//将message信息保存到DB，并向edgefunction模块的channel发送message
 		m.processFunctionAction(message)
 	case OperationFunctionActionResult:
+		//将message信息保存到DB，并向metaManagerConfig.Config.ContextSendGroup模块的channel发送message
 		m.processFunctionActionResult(message)
 	case constants.CSIOperationTypeCreateVolume,
 		constants.CSIOperationTypeDeleteVolume,
 		constants.CSIOperationTypeControllerPublishVolume,
 		constants.CSIOperationTypeControllerUnpublishVolume:
+		//当operation类型与volume相关时，将message发布到cloud和edged的channel中
 		m.processVolume(message)
 	}
 }
@@ -670,7 +681,7 @@ func (m *metaManager) runMetaManager() {
 			}
 			if msg, err := beehiveContext.Receive(m.Name()); err == nil {
 				klog.Infof("get a message %+v", msg)
-				m.process(msg)
+				m.process(msg) //接收调用者的msg，执行msg里的操作
 			} else {
 				klog.Errorf("get a message %+v: %v", msg, err)
 			}

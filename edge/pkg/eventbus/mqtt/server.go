@@ -75,13 +75,13 @@ func NewMqttServer(sqz int, url string, retain bool, qos int) *Server {
 func (m *Server) Run() error {
 	var err error
 
-	m.server, err = transport.Launch(m.url)
+	m.server, err = transport.Launch(m.url) //根据url类型（tcp、ws、wss等）开启一个server
 	if err != nil {
 		klog.Errorf("Launch transport failed %v", err)
 		return err
 	}
 
-	m.backend = broker.NewMemoryBackend()
+	m.backend = broker.NewMemoryBackend() //开启一个有固定参数的内存后台
 	m.backend.SessionQueueSize = m.sessionQueueSize
 
 	m.backend.Logger = func(event broker.LogEvent, client *broker.Client, pkt packet.Generic, msg *packet.Message, err error) {
@@ -89,11 +89,11 @@ func (m *Server) Run() error {
 			if len(m.tree.Match(msg.Topic)) > 0 {
 				m.onSubscribe(msg)
 			}
-		}
+		} //配置logger
 	}
 
-	engine := broker.NewEngine(m.backend)
-	engine.Accept(m.server)
+	engine := broker.NewEngine(m.backend) //安照backend参数生产一个engine
+	engine.Accept(m.server)               //将Server交付给engine运行
 
 	return nil
 }

@@ -51,24 +51,26 @@ func (sb *servicebus) Enable() bool {
 	return sb.enable
 }
 
+//创建urlclient，将servicebus的channel中的msg，按照msg中的地址和方法，发送http请求
+//并将得到的response包装后发布给hubgroup组
 func (sb *servicebus) Start() {
 	// no need to call TopicInit now, we have fixed topic
-	var htc = new(http.Client)
-	htc.Timeout = time.Second * 10
+	var htc = new(http.Client)     //创建HttpClient
+	htc.Timeout = time.Second * 10 //设置HttpClent的超时时间
 
-	var uc = new(util.URLClient)
-	uc.Client = htc
+	var uc = new(util.URLClient) //创建URLClient
+	uc.Client = htc              //将HttpClient赋值给URLClient的Client属性
 
 	//Get message from channel
 	for {
 		select {
-		case <-beehiveContext.Done():
+		case <-beehiveContext.Done(): //检查beehiveContext是否失效
 			klog.Warning("ServiceBus stop")
 			return
 		default:
 
 		}
-		msg, err := beehiveContext.Receive("servicebus")
+		msg, err := beehiveContext.Receive("servicebus") //beehive从servicebus模块的channel获取消息
 		if err != nil {
 			klog.Warningf("servicebus receive msg error %v", err)
 			continue
@@ -84,24 +86,24 @@ func (sb *servicebus) Start() {
 			if len(r) != 2 {
 				m := "the format of resource " + resource + " is incorrect"
 				klog.Warningf(m)
-				code := http.StatusBadRequest
+				code := http.StatusBadRequest //code=400
 				if response, err := buildErrorResponse(msg.GetID(), m, code); err == nil {
-					beehiveContext.SendToGroup(modules.HubGroup, response)
+					beehiveContext.SendToGroup(modules.HubGroup, response) //将错误信息发布到HubGroup组
 				}
 				return
 			}
-			content, err := json.Marshal(msg.GetContent())
+			content, err := json.Marshal(msg.GetContent()) //将msg的内容转化为json格式
 			if err != nil {
 				klog.Errorf("marshall message content failed %v", err)
 				m := "error to marshal request msg content"
-				code := http.StatusBadRequest
+				code := http.StatusBadRequest //code=400
 				if response, err := buildErrorResponse(msg.GetID(), m, code); err == nil {
-					beehiveContext.SendToGroup(modules.HubGroup, response)
+					beehiveContext.SendToGroup(modules.HubGroup, response) //将错误信息发布到HubGroup组
 				}
 				return
 			}
-			var httpRequest util.HTTPRequest
-			if err := json.Unmarshal(content, &httpRequest); err != nil {
+			var httpRequest util.HTTPRequest                              //创建HTTPRequest
+			if err := json.Unmarshal(content, &httpRequest); err != nil { //将content解码，并写入到httpRequest中
 				m := "error to parse http request"
 				code := http.StatusBadRequest
 				klog.Errorf(m, err)
@@ -112,7 +114,7 @@ func (sb *servicebus) Start() {
 			}
 			operation := msg.GetOperation()
 			targetURL := "http://127.0.0.1:" + r[0] + "/" + r[1]
-			resp, err := uc.HTTPDo(operation, targetURL, httpRequest.Header, httpRequest.Body)
+			resp, err := uc.HTTPDo(operation, targetURL, httpRequest.Header, httpRequest.Body) //发出http请求并拿到resp
 			if err != nil {
 				m := "error to call service"
 				code := http.StatusNotFound
@@ -122,8 +124,8 @@ func (sb *servicebus) Start() {
 				}
 				return
 			}
-			resp.Body = http.MaxBytesReader(nil, resp.Body, maxBodySize)
-			resBody, err := ioutil.ReadAll(resp.Body)
+			resp.Body = http.MaxBytesReader(nil, resp.Body, maxBodySize) //最大读取5*1e6个字节，返回一个Reader
+			resBody, err := ioutil.ReadAll(resp.Body)                    //从Reader中读取所有的字节
 			if err != nil {
 				if err.Error() == "http: request body too large" {
 					err = fmt.Errorf("response body too large")
@@ -136,16 +138,17 @@ func (sb *servicebus) Start() {
 				}
 				return
 			}
-
+			//使用上述resp构建一个response
 			response := util.HTTPResponse{Header: resp.Header, StatusCode: resp.StatusCode, Body: resBody}
 			responseMsg := model.NewMessage(msg.GetID())
 			responseMsg.Content = response
-			responseMsg.SetRoute("servicebus", modules.UserGroup)
-			beehiveContext.SendToGroup(modules.HubGroup, *responseMsg)
+			responseMsg.SetRoute("servicebus", modules.UserGroup)      //配置msg的Source属性和Group属性
+			beehiveContext.SendToGroup(modules.HubGroup, *responseMsg) //将msg发布给HUBGROUP
 		}()
 	}
 }
 
+//若出现异常，将异常信息写入该函数，将返回值发布到hubgroup的channel中
 func buildErrorResponse(parentID string, content string, statusCode int) (model.Message, error) {
 	responseMsg := model.NewMessage(parentID)
 	h := http.Header{}

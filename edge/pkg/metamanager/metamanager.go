@@ -59,26 +59,29 @@ func (m *metaManager) Enable() bool {
 }
 
 func (m *metaManager) Start() {
-
-	go func() {
-		period := getSyncInterval()
-		timer := time.NewTimer(period)
+	go func() { //启动新线程，执行定时任务，定时发送msg到metaManager模块的队列中
+		period := getSyncInterval()    //从配置文件中获取一个Pod状态同步周期period
+		timer := time.NewTimer(period) //利用同步周期period创建一个timer（本质上是个channel），
+		// 该timer在period秒之后会有时间数据进入
 		for {
 			select {
-			case <-beehiveContext.Done():
+			case <-beehiveContext.Done(): //检查beehiveContext是否正常工作
 				klog.Warning("MetaManager stop")
 				return
 			case <-timer.C:
+				//以当前时间为基准，将下一次新的时间数据进入的时间，设置为当前时间的period秒之后。
+				//即，过period秒，会有时间数据进入该timer
 				timer.Reset(period)
+				//Reset配合for、阻塞的select形成了一个无限循环的定时器（若beehive正常），定时触发动作
 				msg := model.NewMessage("").BuildRouter(MetaManagerModuleName, GroupResource, model.ResourceTypePodStatus, OperationMetaSync)
 				beehiveContext.Send(MetaManagerModuleName, *msg)
+				//生成一个固定内容的msg，发布到metaManager模块的队列中
 			}
 		}
 	}()
-
 	m.runMetaManager()
 }
 
-func getSyncInterval() time.Duration {
+func getSyncInterval() time.Duration { //从配置文件中获取一个Pod状态同步周期
 	return time.Duration(metamanagerconfig.Config.PodStatusSyncInterval) * time.Second
 }

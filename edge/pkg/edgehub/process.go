@@ -111,6 +111,7 @@ func (eh *EdgeHub) isSyncResponse(msgID string) bool {
 	return exist
 }
 
+//检查keepchannel中是否存在msg的parentid，存在则将msg写入keepchannel中
 func (eh *EdgeHub) sendToKeepChannel(message model.Message) error {
 	eh.keeperLock.RLock()
 	defer eh.keeperLock.RUnlock()
@@ -129,6 +130,7 @@ func (eh *EdgeHub) sendToKeepChannel(message model.Message) error {
 	return nil
 }
 
+//将msg发布到msg.group里
 func (eh *EdgeHub) dispatch(message model.Message) error {
 	// TODO: dispatch message by the message type
 	md, ok := groupMap[message.GetGroup()]
@@ -137,14 +139,15 @@ func (eh *EdgeHub) dispatch(message model.Message) error {
 		return fmt.Errorf("msg_group not found")
 	}
 
-	isResponse := eh.isSyncResponse(message.GetParentID())
+	isResponse := eh.isSyncResponse(message.GetParentID()) //检查parentid是否在syncKeeper的chan里存在
 	if !isResponse {
-		beehiveContext.SendToGroup(md, message)
+		beehiveContext.SendToGroup(md, message) //使用beeliveContext将message发布给group相应的channel中
 		return nil
 	}
-	return eh.sendToKeepChannel(message)
+	return eh.sendToKeepChannel(message) //将message发布到syncKeeper的chan里
 }
 
+//edgehub的websocket从cloudhub接收消息，发布给message里的group
 func (eh *EdgeHub) routeToEdge() {
 	for {
 		select {
@@ -162,6 +165,8 @@ func (eh *EdgeHub) routeToEdge() {
 		}
 
 		klog.Infof("received msg from cloud-hub:%+v", message)
+		//（若parentid在synckeep中）将msg发布到synckeep的channel中
+		//（若parentid不在synckeep中）或者使用beehive将消息发送到group的channel中
 		err = eh.dispatch(message)
 		if err != nil {
 			klog.Errorf("failed to dispatch message, discard: %v", err)
@@ -169,6 +174,7 @@ func (eh *EdgeHub) routeToEdge() {
 	}
 }
 
+//chClient将message同步发送给cloud。即发出消息后，等待一段时间接收response，并将response由beehiveContext处理。
 func (eh *EdgeHub) sendToCloud(message model.Message) error {
 	eh.keeperLock.Lock()
 	err := eh.chClient.Send(message)
@@ -199,6 +205,7 @@ func (eh *EdgeHub) sendToCloud(message model.Message) error {
 	return nil
 }
 
+//beehive从ModuleNameEdgeHub的channel中获取消息，由chclient将消息发送给cloud，并校验消息是否送达
 func (eh *EdgeHub) routeToCloud() {
 	for {
 		select {
@@ -224,6 +231,7 @@ func (eh *EdgeHub) routeToCloud() {
 	}
 }
 
+//每隔15S检查edgehub与cloudhub的连接状态
 func (eh *EdgeHub) keepalive() {
 	for {
 		select {
@@ -249,6 +257,7 @@ func (eh *EdgeHub) keepalive() {
 	}
 }
 
+//将连接状态发布给其他group中
 func (eh *EdgeHub) pubConnectInfo(isConnected bool) {
 	// var info model.Message
 	content := connect.CloudConnected

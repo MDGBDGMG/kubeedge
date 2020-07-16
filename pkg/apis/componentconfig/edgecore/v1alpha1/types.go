@@ -335,9 +335,9 @@ type EventBus struct {
 	// default "tcp://127.0.0.1:1883"
 	MqttServerExternal string `json:"mqttServerExternal,omitempty"`
 	// MqttMode indicates which broker type will be choose
-	// 0: internal mqtt broker enable only.
-	// 1: internal and external mqtt broker enable.
-	// 2: external mqtt broker enable only
+	// 0: internal mqtt broker enable only.            仅内部mqtt broker可用
+	// 1: internal and external mqtt broker enable.    内部与外部mqtt broker均可用
+	// 2: external mqtt broker enable only             仅外部mqtt broker可用
 	// +Required
 	// default: 2
 	MqttMode MqttMode `json:"mqttMode"`

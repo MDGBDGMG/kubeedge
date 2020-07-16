@@ -76,6 +76,7 @@ func onSubConnectionLost(client MQTT.Client, err error) {
 	go MQTTHub.InitSubClient()
 }
 
+//订阅topic，检查token
 func onSubConnect(client MQTT.Client) {
 	for _, t := range SubTopics {
 		token := client.Subscribe(t, 1, OnSubMessageReceived)
@@ -96,7 +97,7 @@ func OnSubMessageReceived(client MQTT.Client, message MQTT.Message) {
 	var target string
 	resource := base64.URLEncoding.EncodeToString([]byte(message.Topic()))
 	if strings.HasPrefix(message.Topic(), "$hw/events/device") || strings.HasPrefix(message.Topic(), "$hw/events/node") {
-		target = modules.TwinGroup
+		target = modules.TwinGroup //按照perfix的不同，将消息返回给不同的模块
 	} else {
 		target = modules.HubGroup
 		if message.Topic() == "SYS/dis/upload_records" {
@@ -112,33 +113,33 @@ func OnSubMessageReceived(client MQTT.Client, message MQTT.Message) {
 
 // InitSubClient init sub client
 func (mq *Client) InitSubClient() {
-	timeStr := strconv.FormatInt(time.Now().UnixNano()/1e6, 10)
+	timeStr := strconv.FormatInt(time.Now().UnixNano()/1e6, 10) //将当前时间转换为十进制数字的String类型
 	right := len(timeStr)
 	if right > 10 {
 		right = 10
 	}
-	subID := fmt.Sprintf("hub-client-sub-%s", timeStr[0:right])
-	subOpts := util.HubClientInit(mq.MQTTUrl, subID, "", "")
-	subOpts.OnConnect = onSubConnect
-	subOpts.AutoReconnect = false
-	subOpts.OnConnectionLost = onSubConnectionLost
-	mq.SubCli = MQTT.NewClient(subOpts)
-	util.LoopConnect(subID, mq.SubCli)
+	subID := fmt.Sprintf("hub-client-sub-%s", timeStr[0:right]) //使用时间戳生成subID
+	subOpts := util.HubClientInit(mq.MQTTUrl, subID, "", "")    //init一个HubClint
+	subOpts.OnConnect = onSubConnect                            //订阅topic，检查token
+	subOpts.AutoReconnect = false                               //关闭自动自动重连
+	subOpts.OnConnectionLost = onSubConnectionLost              //若连接丢失时，重新初始化subClient
+	mq.SubCli = MQTT.NewClient(subOpts)                         //依据上述配置信息创建MQTT的subClient
+	util.LoopConnect(subID, mq.SubCli)                          //将subClient连接到broker
 	klog.Info("finish hub-client sub")
 }
 
 // InitPubClient init pub client
 func (mq *Client) InitPubClient() {
-	timeStr := strconv.FormatInt(time.Now().UnixNano()/1e6, 10)
+	timeStr := strconv.FormatInt(time.Now().UnixNano()/1e6, 10) //将当前时间转换为十进制数字的String类型
 	right := len(timeStr)
 	if right > 10 {
 		right = 10
 	}
-	pubID := fmt.Sprintf("hub-client-pub-%s", timeStr[0:right])
-	pubOpts := util.HubClientInit(mq.MQTTUrl, pubID, "", "")
-	pubOpts.OnConnectionLost = onPubConnectionLost
-	pubOpts.AutoReconnect = false
-	mq.PubCli = MQTT.NewClient(pubOpts)
-	util.LoopConnect(pubID, mq.PubCli)
+	pubID := fmt.Sprintf("hub-client-pub-%s", timeStr[0:right]) //使用时间戳生成pubID
+	pubOpts := util.HubClientInit(mq.MQTTUrl, pubID, "", "")    //init一个HubClint
+	pubOpts.OnConnectionLost = onPubConnectionLost              //若连接丢失时，重新初始化pubClient
+	pubOpts.AutoReconnect = false                               //关闭自动重连
+	mq.PubCli = MQTT.NewClient(pubOpts)                         //依据上述配置信息创建MQTT的pubClient
+	util.LoopConnect(pubID, mq.PubCli)                          //将pubClient连接到broker
 	klog.Info("finish hub-client pub")
 }

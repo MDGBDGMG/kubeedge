@@ -186,7 +186,7 @@ func (msg *Message) Clone(message *Message) *Message {
 // NewRespByMessage returns a new response message by a message received
 func (msg *Message) NewRespByMessage(message *Message, content interface{}) *Message {
 	return NewMessage(message.GetID()).SetRoute(message.GetSource(), message.GetGroup()).
-		SetResourceOperation(message.GetResource(), ResponseOperation).
+		SetResourceOperation(message.GetResource(), ResponseOperation). //仅resourceOperation与原生message不同
 		FillBody(content)
 }
 
