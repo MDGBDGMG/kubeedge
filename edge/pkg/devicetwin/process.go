@@ -32,10 +32,10 @@ func (dt *DeviceTwin) RegisterDTModule(name string) {
 		Name: name,
 	}
 
-	dt.DTContexts.CommChan[name] = make(chan interface{}, 128)
-	dt.HeartBeatToModule[name] = make(chan interface{}, 128)
+	dt.DTContexts.CommChan[name] = make(chan interface{}, 128) //沟通channel
+	dt.HeartBeatToModule[name] = make(chan interface{}, 128)   //心跳Channel
 	module.InitWorker(dt.DTContexts.CommChan[name], dt.DTContexts.ConfirmChan,
-		dt.HeartBeatToModule[name], dt.DTContexts)
+		dt.HeartBeatToModule[name], dt.DTContexts) //分类初始化dt.DTContexts里面的Module
 	dt.DTModules[name] = module
 
 }
@@ -112,7 +112,7 @@ func initActionModuleMap() {
 // SyncSqlite sync sqlite
 func SyncSqlite(context *dtcontext.DTContext) error {
 	klog.Info("Begin to sync sqlite ")
-	rows, queryErr := dtclient.QueryDeviceAll()
+	rows, queryErr := dtclient.QueryDeviceAll() //从数据库中获得device信息
 	if queryErr != nil {
 		klog.Errorf("Query sqlite failed while syncing sqlite, err: %#v", queryErr)
 		return queryErr
@@ -121,7 +121,7 @@ func SyncSqlite(context *dtcontext.DTContext) error {
 		klog.Info("Query sqlite nil while syncing sqlite")
 		return nil
 	}
-	for _, device := range *rows {
+	for _, device := range *rows { //更新Device信息，并存储在db中
 		err := SyncDeviceFromSqlite(context, device.ID)
 		if err != nil {
 			continue
@@ -134,15 +134,15 @@ func SyncSqlite(context *dtcontext.DTContext) error {
 //SyncDeviceFromSqlite sync device from sqlite
 func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	klog.Infof("Sync device detail info from DB of device %s", deviceID)
-	_, exist := context.GetDevice(deviceID)
+	_, exist := context.GetDevice(deviceID) //依据ID获取Device详细信息
 	if !exist {
-		var deviceMutex sync.Mutex
+		var deviceMutex sync.Mutex //若没有ID，则加锁写入到表中
 		context.DeviceMutex.Store(deviceID, &deviceMutex)
 	}
 
 	defer context.Unlock(deviceID)
 	context.Lock(deviceID)
-
+	//从db中查询device列表，返回Device信息
 	devices, err := dtclient.QueryDevice("id", deviceID)
 	if err != nil {
 		klog.Errorf("query device failed: %v", err)
@@ -152,7 +152,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		return errors.New("Not found device from db")
 	}
 	device := (*devices)[0]
-
+	//按照key过滤，查找DeviceAttr属性信息
 	deviceAttr, err := dtclient.QueryDeviceAttr("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device attr failed: %v", err)
@@ -162,7 +162,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	for _, attr := range *deviceAttr {
 		attributes = append(attributes, attr)
 	}
-
+	//按照key过滤，查找DeviceTwin性信息
 	deviceTwin, err := dtclient.QueryDeviceTwin("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device twin failed: %v", err)
@@ -172,7 +172,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	for _, twin := range *deviceTwin {
 		twins = append(twins, twin)
 	}
-
+	//将更新过的信息存储起来
 	context.DeviceList.Store(deviceID, &dttype.Device{
 		ID:          deviceID,
 		Name:        device.Name,
@@ -275,11 +275,11 @@ func (dt *DeviceTwin) runDeviceTwin() {
 
 	moduleNames := []string{dtcommon.MemModule, dtcommon.TwinModule, dtcommon.DeviceModule, dtcommon.CommModule}
 	for _, v := range moduleNames {
-		dt.RegisterDTModule(v)
+		dt.RegisterDTModule(v) //将module分类进行初始化。创建worker和所属类别
 		go dt.DTModules[v].Start()
 	}
 	go func() {
-		for {
+		for { //无限循环
 			select {
 			case <-beehiveContext.Done():
 				klog.Warning("Stop DeviceTwin ModulesContext Receive loop")

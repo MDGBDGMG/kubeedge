@@ -184,6 +184,7 @@ func dumpMessageMetadata(msg *beehiveModel.Message) string {
 		msg.Header.ID, msg.Header.ParentID, msg.Router.Group, msg.Router.Source, msg.Router.Resource, msg.Router.Operation)
 }
 
+//如果msg的resource包含node前缀，则去掉node前缀
 func trimMessage(msg *beehiveModel.Message) {
 	resource := msg.GetResource()
 	if strings.HasPrefix(resource, model.ResNode) {
@@ -390,7 +391,7 @@ func (mh *MessageHandle) MessageWriteLoop(info *model.HubInfo, stopServe chan Ex
 	nodeQueue := mh.MessageQueue.GetNodeQueue(info.NodeID)
 	nodeStore := mh.MessageQueue.GetNodeStore(info.NodeID)
 
-	for {
+	for { //外层无限循环，从nodeQueue和nodeStore中获取node相关的msg信息，去掉resource的node
 		key, quit := nodeQueue.Get()
 		if quit {
 			klog.Errorf("nodeQueue for node %s has shutdown", info.NodeID)
@@ -411,10 +412,10 @@ func (mh *MessageHandle) MessageWriteLoop(info *model.HubInfo, stopServe chan Ex
 		klog.V(4).Infof("event to send for node %s, %s, content %s", info.NodeID, dumpMessageMetadata(msg), msg.Content)
 
 		copyMsg := deepcopy(msg)
-		trimMessage(msg)
+		trimMessage(msg) //去掉node前缀
 
-		for {
-			conn, ok := mh.nodeConns.Load(info.NodeID)
+		for { //内层循环 依据info信息连接node，
+			conn, ok := mh.nodeConns.Load(info.NodeID) //创建node连接器
 			if !ok {
 				time.Sleep(time.Second * 2)
 				continue

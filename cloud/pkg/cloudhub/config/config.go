@@ -28,9 +28,11 @@ type Configure struct {
 	Checker       *kele.ReadyzAdaptor
 }
 
+//初始化clienthub的configure
+//就是从文件中获取CA\CAKEY\CERT\CERTKEY
 func InitConfigure(hub *v1alpha1.CloudHub, kubeAPIConfig *v1alpha1.KubeAPIConfig) {
-	once.Do(func() {
-		if len(hub.AdvertiseAddress) == 0 {
+	once.Do(func() { //once DO精准执行一次
+		if len(hub.AdvertiseAddress) == 0 { //检查AdvertiseAddress是否配置
 			klog.Fatal("AdvertiseAddress must be specified!")
 		}
 
@@ -39,14 +41,14 @@ func InitConfigure(hub *v1alpha1.CloudHub, kubeAPIConfig *v1alpha1.KubeAPIConfig
 			KubeAPIConfig: kubeAPIConfig,
 		}
 
-		ca, err := ioutil.ReadFile(hub.TLSCAFile)
+		ca, err := ioutil.ReadFile(hub.TLSCAFile) //获取ca文件
 		if err == nil {
 			block, _ := pem.Decode(ca)
 			ca = block.Bytes
 			klog.Info("Succeed in loading CA certificate from local directory")
 		}
 
-		caKey, err := ioutil.ReadFile(hub.TLSCAKeyFile)
+		caKey, err := ioutil.ReadFile(hub.TLSCAKeyFile) //获取ca的key
 		if err == nil {
 			block, _ := pem.Decode(caKey)
 			caKey = block.Bytes
@@ -60,13 +62,13 @@ func InitConfigure(hub *v1alpha1.CloudHub, kubeAPIConfig *v1alpha1.KubeAPIConfig
 			klog.Fatal("Both of ca and caKey should be specified!")
 		}
 
-		cert, err := ioutil.ReadFile(hub.TLSCertFile)
+		cert, err := ioutil.ReadFile(hub.TLSCertFile) //从cert文件中获取cert
 		if err == nil {
 			block, _ := pem.Decode(cert)
 			cert = block.Bytes
 			klog.Info("Succeed in loading certificate from local directory")
 		}
-		key, err := ioutil.ReadFile(hub.TLSPrivateKeyFile)
+		key, err := ioutil.ReadFile(hub.TLSPrivateKeyFile) //获取cert的key
 		if err == nil {
 			block, _ := pem.Decode(key)
 			key = block.Bytes

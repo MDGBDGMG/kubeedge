@@ -34,7 +34,7 @@ type Interface interface {
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
-// version included in a Clientset.
+// version included in a Clientset.//每一个group有且仅有一个版本
 type Clientset struct {
 	*discovery.DiscoveryClient
 	devicesV1alpha1       *devicesv1alpha1.DevicesV1alpha1Client

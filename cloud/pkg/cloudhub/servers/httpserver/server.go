@@ -42,13 +42,13 @@ const (
 
 // StartHTTPServer starts the http service
 func StartHTTPServer() {
-	router := mux.NewRouter()
+	router := mux.NewRouter() //创建一个router，本质上是个map
 	router.HandleFunc("/edge.crt", edgeCoreClientCert).Methods("GET")
 	router.HandleFunc("/ca.crt", getCA).Methods("GET")
 	router.HandleFunc("/readyz", electionHandler).Methods("GET")
 
 	addr := fmt.Sprintf("%s:%d", hubconfig.Config.Https.Address, hubconfig.Config.Https.Port)
-
+	//解析公钥私钥对，返回cert
 	cert, err := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: hubconfig.Config.Cert}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: hubconfig.Config.Key}))
 
 	if err != nil {
@@ -63,7 +63,7 @@ func StartHTTPServer() {
 			ClientAuth:   tls.NoClientCert,
 		},
 	}
-	klog.Fatal(server.ListenAndServeTLS("", ""))
+	klog.Fatal(server.ListenAndServeTLS("", "")) //启动一个http service
 }
 
 // getCA returns the caCertDER

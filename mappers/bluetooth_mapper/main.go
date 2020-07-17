@@ -41,9 +41,9 @@ func main() {
 		os.Exit(1)
 	}
 	bleController := controller.Config{
-		Watcher:       BleConfig.Watcher,
-		ActionManager: BleConfig.ActionManager,
-		Scheduler:     BleConfig.Scheduler,
+		Watcher:       BleConfig.Watcher,       //map[name,action[]]
+		ActionManager: BleConfig.ActionManager, // Action{是否立即执行，name，operation}
+		Scheduler:     BleConfig.Scheduler,     //Scheduler{name,周期，执行次数，ActionList}
 		Converter:     BleConfig.Converter,
 		Device:        BleConfig.Device,
 		Mqtt:          BleConfig.Mqtt,

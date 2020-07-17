@@ -60,7 +60,7 @@ func getIps(advertiseAddress []string) (Ips []net.IP) {
 
 // GenerateToken will create a token consisting of caHash and jwt Token and save it to secret
 func GenerateToken() error {
-	expiresAt := time.Now().Add(time.Hour * 24).Unix()
+	expiresAt := time.Now().Add(time.Hour * 24).Unix() //
 
 	token := jwt.New(jwt.SigningMethodHS256)
 
@@ -85,7 +85,7 @@ func GenerateToken() error {
 	}
 
 	t := time.NewTicker(time.Hour * 12)
-	go func() {
+	go func() { //默认每隔12小时刷新token
 		for {
 			select {
 			case <-t.C:

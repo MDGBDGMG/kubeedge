@@ -17,14 +17,14 @@ import (
 
 // StartCloudHub starts the cloud hub service
 func StartCloudHub(messageq *channelq.ChannelMessageQueue) {
-	handler.InitHandler(messageq)
+	handler.InitHandler(messageq) //依据配置创建Handler，为Handler新增三个handler：心跳检查、msg写操作、list类型的msg写操作
 	// start websocket server
 	if hubconfig.Config.WebSocket.Enable {
-		go startWebsocketServer()
+		go startWebsocketServer() //依据配置启动websocket协程
 	}
 	// start quic server
 	if hubconfig.Config.Quic.Enable {
-		go startQuicServer()
+		go startQuicServer() //依据配置启动quic协程。
 	}
 }
 

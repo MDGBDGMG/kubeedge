@@ -61,7 +61,7 @@ func (dm *DTModule) InitWorker(recv chan interface{}, confirm chan interface{}, 
 }
 
 //Start module, actual worker start
-func (dm DTModule) Start() {
+func (dm DTModule) Start() { //启动worker
 	defer func() {
 		if err := recover(); err != nil {
 			klog.Infof("%s in twin panic", dm.Name)

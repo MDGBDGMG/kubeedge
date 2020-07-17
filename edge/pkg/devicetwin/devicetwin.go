@@ -54,9 +54,9 @@ func (dt *DeviceTwin) Enable() bool {
 
 // Start run the module
 func (dt *DeviceTwin) Start() {
-	dtContexts, _ := dtcontext.InitDTContext()
+	dtContexts, _ := dtcontext.InitDTContext() //初始化deviceTwin
 	dt.DTContexts = dtContexts
-	err := SyncSqlite(dt.DTContexts)
+	err := SyncSqlite(dt.DTContexts) //将实际信息同步到SQL中
 	if err != nil {
 		klog.Errorf("Start DeviceTwin Failed, Sync Sqlite error:%v", err)
 		return

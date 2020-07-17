@@ -43,25 +43,25 @@ func NewChannelMessageQueue(objectSyncController *hubconfig.ObjectSyncController
 // node id from it, gets the message associated with the node
 // and pushes the message to the queue
 func (q *ChannelMessageQueue) DispatchMessage() {
-	for {
+	for { //循环执行下列操作
 		select {
 		case <-beehiveContext.Done():
 			klog.Warning("Cloudhub channel eventqueue dispatch message loop stoped")
 			return
 		default:
 		}
-		msg, err := beehiveContext.Receive(model.SrcCloudHub)
+		msg, err := beehiveContext.Receive(model.SrcCloudHub) //从cloudhub获取msg
 		if err != nil {
 			klog.Info("receive not Message format message")
 			continue
 		}
-		nodeID, err := GetNodeID(&msg)
+		nodeID, err := GetNodeID(&msg) //从msg解析token，获取nodeid
 		if nodeID == "" || err != nil {
 			klog.Warning("node id is not found in the message")
 			continue
 		}
 
-		if isListResource(&msg) {
+		if isListResource(&msg) { //校验msg的resource类型是否是ListResource
 			q.addListMessageToQueue(nodeID, &msg)
 		} else {
 			q.addMessageToQueue(nodeID, &msg)

@@ -60,7 +60,8 @@ func QueryDevice(key string, condition string) (*[]Device, error) {
 
 // QueryDeviceAll query twin
 func QueryDeviceAll() (*[]Device, error) {
-	devices := new([]Device)
+	devices := new([]Device) //新建一个Device数组
+	//从device表中查询数据写入到Device数组
 	_, err := dbm.DBAccess.QueryTable(DeviceTableName).All(devices)
 	if err != nil {
 		return nil, err

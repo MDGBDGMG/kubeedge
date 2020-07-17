@@ -28,8 +28,9 @@ type CommWorker struct {
 }
 
 //Start worker
+//启动communicate类型的worker
 func (cw CommWorker) Start() {
-	initActionCallBack()
+	initActionCallBack() //将msg转化格式后存入confirmMap，通知websocket；或者从confirmMap中删掉此msg.parentID
 	for {
 		select {
 		case msg, ok := <-cw.ReceiverChan:
@@ -63,9 +64,13 @@ func (cw CommWorker) Start() {
 
 func initActionCallBack() {
 	ActionCallBack = make(map[string]CallBack)
+	//将message转化格式，发送到websocket的channel中，存入confirmMap中
 	ActionCallBack[dtcommon.SendToCloud] = dealSendToCloud
+	//将msg发送到eventbus的channel中
 	ActionCallBack[dtcommon.SendToEdge] = dealSendToEdge
+	//初始化一个固定的detail结构体，包装为message，存入confirmMap，发送到websocket
 	ActionCallBack[dtcommon.LifeCycle] = dealLifeCycle
+	//将msg转为message格式，从confirmMap里删掉message.parentID
 	ActionCallBack[dtcommon.Confirm] = dealConfirm
 }
 
@@ -77,13 +82,13 @@ func dealSendToCloud(context *dtcontext.DTContext, resource string, msg interfac
 	if strings.Compare(context.State, dtcommon.Disconnected) == 0 {
 		klog.Infof("Disconnected with cloud,not send msg to cloud")
 		return nil, nil
-	}
-	message, ok := msg.(*model.Message)
+	} //检查context的状态是否断开
+	message, ok := msg.(*model.Message) //将msg转换为message格式
 	if !ok {
 		return nil, errors.New("msg not Message type")
 	}
-	beehiveContext.Send(dtcommon.HubModule, *message)
-	msgID := message.GetID()
+	beehiveContext.Send(dtcommon.HubModule, *message) //将message发送道websocket的channel
+	msgID := message.GetID()                          //将msg存到confirmMap中
 	context.ConfirmMap.Store(msgID, &dttype.DTMessage{Msg: message, Action: dtcommon.SendToCloud, Type: dtcommon.CommModule})
 	return nil, nil
 }
@@ -94,8 +99,8 @@ func dealLifeCycle(context *dtcontext.DTContext, resource string, msg interface{
 		return nil, errors.New("msg not Message type")
 	}
 	connectedInfo, _ := (message.Content.(string))
-	if strings.Compare(connectedInfo, connect.CloudConnected) == 0 {
-		if strings.Compare(context.State, dtcommon.Disconnected) == 0 {
+	if strings.Compare(connectedInfo, connect.CloudConnected) == 0 { //比较连接信息是否一致
+		if strings.Compare(context.State, dtcommon.Disconnected) == 0 { //比较状态是否断开
 			_, err := detailRequest(context, msg)
 			if err != nil {
 				klog.Errorf("detail request: %v", err)
@@ -124,23 +129,23 @@ func dealConfirm(context *dtcontext.DTContext, resource string, msg interface{})
 
 func detailRequest(context *dtcontext.DTContext, msg interface{}) (interface{}, error) {
 	//todo eventid uuid
-	getDetail := dttype.GetDetailNode{
+	getDetail := dttype.GetDetailNode{ //初始化一个Detail结构体
 		EventType: "group_membership_event",
 		EventID:   "123",
 		Operation: "detail",
 		GroupID:   context.NodeName,
 		TimeStamp: time.Now().UnixNano() / 1000000}
-	getDetailJSON, marshalErr := json.Marshal(getDetail)
+	getDetailJSON, marshalErr := json.Marshal(getDetail) //将结构体转化为JSON
 	if marshalErr != nil {
 		klog.Errorf("Marshal request error while request detail, err: %#v", marshalErr)
 		return nil, marshalErr
 	}
-
+	//包装为一个message
 	message := context.BuildModelMessage("resource", "", "membership/detail", "get", string(getDetailJSON))
 	klog.Info("Request detail")
-	msgID := message.GetID()
+	msgID := message.GetID() //将message存入到confirmMap中
 	context.ConfirmMap.Store(msgID, &dttype.DTMessage{Msg: message, Action: dtcommon.SendToCloud, Type: dtcommon.CommModule})
-	beehiveContext.Send(dtcommon.HubModule, *message)
+	beehiveContext.Send(dtcommon.HubModule, *message) //将msg发送到websocket的channel中
 	return nil, nil
 }
 
