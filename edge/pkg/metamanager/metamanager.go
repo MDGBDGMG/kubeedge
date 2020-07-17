@@ -59,7 +59,7 @@ func (m *metaManager) Enable() bool {
 }
 
 func (m *metaManager) Start() {
-	go func() { //启动新线程，执行定时任务，定时发送msg到metaManager模块的队列中
+	go func() { //启动新协程，执行定时任务，定时发送msg到metaManager模块的队列中
 		period := getSyncInterval()    //从配置文件中获取一个Pod状态同步周期period
 		timer := time.NewTimer(period) //利用同步周期period创建一个timer（本质上是个channel），
 		// 该timer在period秒之后会有时间数据进入

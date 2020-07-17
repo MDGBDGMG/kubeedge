@@ -107,12 +107,12 @@ func (eh *EdgeHub) Start() {
 		}
 		// execute hook func after connect
 		eh.pubConnectInfo(true) //向resource、twin、user、func等group发布连接 可用 信息
-		//启动线程，edgehub的websocket从cloudhub接收消息，发布给message里的group；若发送失败，则向reconnectChan中新增数据
+		//启动协程，edgehub的websocket从cloudhub接收消息，发布给message里的group；若发送失败，则向reconnectChan中新增数据
 		go eh.routeToEdge()
-		//启动线程，beehive从ModuleNameEdgeHub的channel中获取消息，由chclient将消息发送给cloud，并校验消息是否送达；
+		//启动协程，beehive从ModuleNameEdgeHub的channel中获取消息，由chclient将消息发送给cloud，并校验消息是否送达；
 		//若发送失败，则向reconnectChan中新增数据
 		go eh.routeToCloud()
-		//启动线程，每隔15s向cloud发送消息，检查是否与cloud保持连接状态；若连接断开，则向reconnectChan中新增数据
+		//启动协程，每隔15s向cloud发送消息，检查是否与cloud保持连接状态；若连接断开，则向reconnectChan中新增数据
 		go eh.keepalive()
 
 		// wait the stop singal
