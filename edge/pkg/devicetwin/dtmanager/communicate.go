@@ -30,15 +30,18 @@ type CommWorker struct {
 //Start worker
 //启动communicate类型的worker
 func (cw CommWorker) Start() {
-	initActionCallBack() //将msg转化格式后存入confirmMap，通知websocket；或者从confirmMap中删掉此msg.parentID
-	for {
+	//初始化ActionCallBack
+	//将msg转化格式后存入confirmMap。通知websocket；或者从confirmMap中删掉此msg.parentID
+	initActionCallBack()
+	for { //无限循环
 		select {
-		case msg, ok := <-cw.ReceiverChan:
+		case msg, ok := <-cw.ReceiverChan: //若收到communicate类型的msg
 			klog.Info("receive msg commModule")
 			if !ok {
 				return
 			}
 			if dtMsg, isDTMessage := msg.(*dttype.DTMessage); isDTMessage {
+				//依据action，执行数据处理操作
 				if fn, exist := ActionCallBack[dtMsg.Action]; exist {
 					_, err := fn(cw.DTContexts, dtMsg.Identity, dtMsg.Msg)
 					if err != nil {
@@ -49,12 +52,13 @@ func (cw CommWorker) Start() {
 				}
 			}
 
-		case <-time.After(time.Duration(60) * time.Second):
-			cw.checkConfirm(cw.DTContexts, nil)
-		case v, ok := <-cw.HeartBeatChan:
+		case <-time.After(time.Duration(60) * time.Second): //若60s没有新数据进入
+			cw.checkConfirm(cw.DTContexts, nil) //校验confirm中的数据是否正确
+		case v, ok := <-cw.HeartBeatChan: //若心跳channel有新数据
 			if !ok {
 				return
 			}
+			//校验HeartBeat内容是否正常，若异常则返回
 			if err := cw.DTContexts.HeartBeat(cw.Group, v); err != nil {
 				return
 			}
@@ -115,12 +119,12 @@ func dealLifeCycle(context *dtcontext.DTContext, resource string, msg interface{
 }
 func dealConfirm(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	klog.Infof("CONFIRM EVENT")
-	value, ok := msg.(*model.Message)
+	value, ok := msg.(*model.Message) //转化数据格式为Message
 
 	if ok {
-		parentMsgID := value.GetParentID()
+		parentMsgID := value.GetParentID() //取出ParentID
 		klog.Infof("CommModule deal confirm msgID %s", parentMsgID)
-		context.ConfirmMap.Delete(parentMsgID)
+		context.ConfirmMap.Delete(parentMsgID) //从ConfirmMap中删掉此ParentID
 	} else {
 		return nil, errors.New("CommModule deal confirm, type not correct")
 	}
@@ -150,16 +154,16 @@ func detailRequest(context *dtcontext.DTContext, msg interface{}) (interface{}, 
 }
 
 func (cw CommWorker) checkConfirm(context *dtcontext.DTContext, msg interface{}) (interface{}, error) {
-	klog.Info("CheckConfirm")
+	klog.Info("CheckConfirm") //校验confirm中的数据是否正确
 	context.ConfirmMap.Range(func(key interface{}, value interface{}) bool {
-		dtmsg, ok := value.(*dttype.DTMessage)
+		dtmsg, ok := value.(*dttype.DTMessage) //转化为DTMessage格式
 		klog.Info("has msg")
 		if !ok {
 
-		} else {
+		} else { //数据转化成功
 			klog.Info("redo task due to no recv")
 			if fn, exist := ActionCallBack[dtmsg.Action]; exist {
-				_, err := fn(cw.DTContexts, dtmsg.Identity, dtmsg.Msg)
+				_, err := fn(cw.DTContexts, dtmsg.Identity, dtmsg.Msg) //再次验证数据格式是否正确
 				if err != nil {
 					klog.Errorf("CommModule deal %s event failed: %v", dtmsg.Action, err)
 				}

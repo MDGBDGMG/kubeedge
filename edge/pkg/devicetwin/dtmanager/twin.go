@@ -46,15 +46,17 @@ type TwinWorker struct {
 }
 
 //Start worker
+//启动TwinWorker
 func (tw TwinWorker) Start() {
 	initTwinActionCallBack()
 	for {
 		select {
-		case msg, ok := <-tw.ReceiverChan:
+		case msg, ok := <-tw.ReceiverChan: //接收msg
 			if !ok {
 				return
 			}
 			if dtMsg, isDTMessage := msg.(*dttype.DTMessage); isDTMessage {
+				//按照action，调用回调函数
 				if fn, exist := twinActionCallBack[dtMsg.Action]; exist {
 					_, err := fn(tw.DTContexts, dtMsg.Identity, dtMsg.Msg)
 					if err != nil {
@@ -65,7 +67,7 @@ func (tw TwinWorker) Start() {
 				}
 			}
 
-		case v, ok := <-tw.HeartBeatChan:
+		case v, ok := <-tw.HeartBeatChan: //心跳检查
 			if !ok {
 				return
 			}
@@ -77,10 +79,14 @@ func (tw TwinWorker) Start() {
 }
 
 func initTwinActionCallBack() {
+	//init仅执行一次
 	initTwinActionCallBackOnce.Do(func() {
 		twinActionCallBack = make(map[string]CallBack)
+		//
 		twinActionCallBack[dtcommon.TwinUpdate] = dealTwinUpdate
+		//
 		twinActionCallBack[dtcommon.TwinGet] = dealTwinGet
+		//
 		twinActionCallBack[dtcommon.TwinCloudSync] = dealTwinSync
 	})
 }
@@ -142,22 +148,27 @@ func dealTwinUpdate(context *dtcontext.DTContext, resource string, msg interface
 	}
 
 	context.Lock(resource)
+	//执行updated操作
 	Updated(context, resource, content)
 	context.Unlock(resource)
 	return nil, nil
 }
 
 // Updated update the snapshot
+//更新快照
 func Updated(context *dtcontext.DTContext, deviceID string, payload []byte) {
 	result := []byte("")
-	msg, err := dttype.UnmarshalDeviceTwinUpdate(payload)
+	msg, err := dttype.UnmarshalDeviceTwinUpdate(payload) //格式转化
 	if err != nil {
+		//若格式转化失败
 		klog.Errorf("Unmarshal update request body failed, err: %#v", err)
+		//将contest转化格式，写入result经过CommWorker,发送到edge的busgroup的channel
 		dealUpdateResult(context, "", "", dtcommon.BadRequestCode, err, result)
 		return
 	}
 	klog.Infof("Begin to update twin of the device %s", deviceID)
 	eventID := msg.EventID
+	//若格式转化成功
 	DealDeviceTwin(context, deviceID, eventID, msg.Twin, RestDealType)
 }
 
@@ -166,15 +177,16 @@ func DealDeviceTwin(context *dtcontext.DTContext, deviceID string, eventID strin
 	klog.Infof("Begin to deal device twin of the device %s", deviceID)
 	now := time.Now().UnixNano() / 1e6
 	result := []byte("")
-	deviceModel, isExist := context.GetDevice(deviceID)
+	deviceModel, isExist := context.GetDevice(deviceID) //从context中获取device
 	if !isExist {
 		klog.Errorf("Update twin rejected due to the device %s is not existed", deviceID)
+		//若context中不存在deviceID，那么将result经过CommWorker,发送到edge的busgroup的channel
 		dealUpdateResult(context, deviceID, eventID, dtcommon.NotFoundCode, errors.New("Update rejected due to the device is not existed"), result)
 		return errors.New("Update rejected due to the device is not existed")
 	}
 	content := msgTwin
 	var err error
-	if content == nil {
+	if content == nil { //msgTwin为nil，则报异常。并将result经过CommWorker,发送到edge的busgroup的channel
 		klog.Errorf("Update twin of device %s error, the update request body not have key:twin", deviceID)
 		err = errors.New("Update twin error, the update request body not have key:twin")
 		dealUpdateResult(context, deviceID, eventID, dtcommon.BadRequestCode, err, result)
@@ -229,6 +241,7 @@ func DealDeviceTwin(context *dtcontext.DTContext, deviceID string, eventID strin
 }
 
 //dealUpdateResult build update result and send result, if success send the current state
+//将result经过CommWorker,发送到edge的busgroup的channel
 func dealUpdateResult(context *dtcontext.DTContext, deviceID string, eventID string, code int, err error, payload []byte) error {
 	klog.Infof("Deal update result of device %s: Build and send result", deviceID)
 
@@ -241,7 +254,7 @@ func dealUpdateResult(context *dtcontext.DTContext, deviceID string, eventID str
 	result := []byte("")
 	var jsonErr error
 	if err == nil {
-		result = payload
+		result = payload //将payload赋值给result
 	} else {
 		para.Reason = err.Error()
 		result, jsonErr = dttype.BuildErrorResult(para)
@@ -251,6 +264,7 @@ func dealUpdateResult(context *dtcontext.DTContext, deviceID string, eventID str
 		}
 	}
 	klog.Infof("Deal update result of device %s: send result", deviceID)
+	//将result经过CommWorker,发送到edge的busgroup的channel
 	return context.Send("",
 		dtcommon.SendToEdge,
 		dtcommon.CommModule,
@@ -347,31 +361,41 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 }
 
 //dealtype 0:update ,2:cloud_update,1:detail result,3:deleted
+//校验twin和msgTwin的版本是否正常，然后将msgTwin版本赋值给twin
 func dealVersion(version *dttype.TwinVersion, reqVesion *dttype.TwinVersion, dealType int) (bool, error) {
-	if dealType == RestDealType {
+	if dealType == RestDealType { //若来自mqtt
+		//将twin的edgeversion加1
 		version.EdgeVersion = version.EdgeVersion + 1
 	} else if dealType >= SyncDealType {
-		if reqVesion == nil {
+		//若非来自mqtt
+		if reqVesion == nil { //若msgTwin的版本为空，同时dealtype为delete，报异常
 			if dealType == SyncTwinDeleteDealType {
 				return true, nil
 			}
 			return false, errors.New("Version not allowed be nil while syncing")
 		}
+		//若twin的cloud版本 > msgTwin的cloud版本，报异常（潜台词就是twin版本必须小于等于msgTwin的版本）
 		if version.CloudVersion > reqVesion.CloudVersion {
 			return false, errors.New("Version not allowed")
 		}
+		//若twin的edge版本 > msgTwin的edge版本，报异常
 		if version.EdgeVersion > reqVesion.EdgeVersion {
 			return false, errors.New("Not allowed to sync due to version conflict")
 		}
+		//将msgTwin的版本赋值给twin，即提升/未改变twin的版本
 		version.CloudVersion = reqVesion.CloudVersion
 		version.EdgeVersion = reqVesion.EdgeVersion
 	}
 	return true, nil
 }
 
+//比较twin和msgTwin的 expectversion和 actualversion，然后更新twin的expectversion和 actualversion
+//若twin有更新操作，那么将更新信息写入result
+//若msgTwin和twin的版本信息校验失败，那么在result中删除key
 func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key string, twin *dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int) error {
 	document := returnResult.Document
 	document[key] = &dttype.TwinDoc{}
+	//从*MsgTwin中获取数据，返回MsgTwin
 	copytwin := dttype.CopyMsgTwin(twin, true)
 	document[key].LastState = &copytwin
 	cols := make(map[string]interface{})
@@ -383,31 +407,40 @@ func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key st
 		if twin.Metadata != nil && strings.Compare(twin.Metadata.Type, "deleted") == 0 {
 			return nil
 		}
+		//若twin的update信息不是来自mqtt
 		if dealType != RestDealType {
+			//赋值为twin delete when sync，同步时删除twin
 			dealType = SyncTwinDeleteDealType
 		}
 		hasTwinExpected := true
+		//如果twin.ExpectedVersion为空，那么初始化
 		if twin.ExpectedVersion == nil {
 			twin.ExpectedVersion = &dttype.TwinVersion{}
 			hasTwinExpected = false
 		}
+		//如果twin.ExpectedVersion不为空
 		if hasTwinExpected {
+			//取出twin的expectedVersion
 			expectedVersion := twin.ExpectedVersion
 
 			var msgTwinExpectedVersion *dttype.TwinVersion
-			if dealType != RestDealType {
+			if dealType != RestDealType { //并非来自mqtt
 				msgTwinExpectedVersion = msgTwin.ExpectedVersion
 			}
+			//校验twin和msgTwin的expectedVersion是否正常，然后将msgTwin的expectedVersion赋值给twin
 			ok, _ := dealVersion(expectedVersion, msgTwinExpectedVersion, dealType)
 			if !ok {
-				if dealType != RestDealType {
+				if dealType != RestDealType { //并非来自mqtt
 					copySync := dttype.CopyMsgTwin(twin, false)
 					syncResult[key] = &copySync
+					//若版本不同，将document的key删除
 					delete(document, key)
+					//将同步结果写入returnResult
 					returnResult.SyncResult = syncResult
 					return nil
 				}
 			} else {
+				//若twin的expectedVersion更新成功，更新twin和cols
 				expectedVersionJSON, _ := json.Marshal(expectedVersion)
 				cols["expected_version"] = string(expectedVersionJSON)
 				cols["attr_type"] = "deleted"
@@ -430,18 +463,21 @@ func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key st
 		}
 		hasTwinActual := true
 
+		//若ActualVersion为空，初始化
 		if twin.ActualVersion == nil {
 			twin.ActualVersion = &dttype.TwinVersion{}
 			hasTwinActual = false
 		}
 		if hasTwinActual {
+			//若twin.ActualVersion不为空
 			actualVersion := twin.ActualVersion
 			var msgTwinActualVersion *dttype.TwinVersion
 			if dealType != RestDealType {
 				msgTwinActualVersion = msgTwin.ActualVersion
 			}
+			//比较twin和msgTwin的actualVersion，并将msgTwin的actualVersion赋值给twin
 			ok, _ := dealVersion(actualVersion, msgTwinActualVersion, dealType)
-			if !ok {
+			if !ok { //若actualVersion配置失败
 				if dealType != RestDealType {
 					copySync := dttype.CopyMsgTwin(twin, false)
 					syncResult[key] = &copySync
@@ -450,6 +486,7 @@ func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key st
 					return nil
 				}
 			} else {
+				//若actualVersion设置成功，则配置twin的参数
 				actualVersionJSON, _ := json.Marshal(actualVersion)
 
 				cols["actual_version"] = string(actualVersionJSON)
@@ -474,16 +511,19 @@ func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key st
 	}
 
 	if isChange {
+		//若twin的actualVersion或expectedVersion更新过，将更新的信息写入update
 		update = append(update, dtclient.DeviceTwinUpdate{DeviceID: deviceID, Name: key, Cols: cols})
 		returnResult.Update = update
-		if dealType == RestDealType {
+		if dealType == RestDealType { //若twin命令来自mqtt
 			returnResult.Result[key] = nil
 			returnResult.SyncResult = syncResult
 		} else {
+			//若twin命令并非来自mqtt
 			delete(syncResult, key)
 		}
 		returnResult.Document = document
 	} else {
+		//若twin的version数据未发生update
 		delete(document, key)
 		delete(syncResult, key)
 
@@ -498,11 +538,12 @@ func isTwinValueDiff(twin *dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int
 	hasMsgTwin := false
 	twinValue := twin.Expected
 	msgTwinValue := msgTwin.Expected
-
+	//如果处理actual，那么将twin和msgTwin的actual，赋值给变量
 	if dealType == DealActual {
 		twinValue = twin.Actual
 		msgTwinValue = msgTwin.Actual
 	}
+	//校验
 	if twinValue != nil {
 		hasTwin = true
 	}
@@ -511,15 +552,19 @@ func isTwinValueDiff(twin *dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int
 	}
 	valueType := "string"
 	if strings.Compare(twin.Metadata.Type, "deleted") == 0 {
+		//若twin的Metadata的type是deleted
 		if msgTwin.Metadata != nil {
+			//取出 msgTwin.Metadata.Type
 			valueType = msgTwin.Metadata.Type
 		}
 	} else {
+		//若twin的Metadata的type 不是 deleted
+		//取出twin.Metadata.Type
 		valueType = twin.Metadata.Type
 	}
 	if hasMsgTwin {
 		if hasTwin {
-
+			//校验*msgTwinValue.Value的数据类型是否与valueType一致
 			err := dtcommon.ValidateValue(valueType, *msgTwinValue.Value)
 			if err != nil {
 				return false, err
@@ -531,6 +576,7 @@ func isTwinValueDiff(twin *dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int
 	return false, nil
 }
 
+//270行
 func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key string, twin *dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int) error {
 	klog.Info("dealtwincompare")
 	now := time.Now().UnixNano() / 1e6
@@ -539,24 +585,29 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 	document[key] = &dttype.TwinDoc{}
 	copytwin := dttype.CopyMsgTwin(twin, true)
 	document[key].LastState = &copytwin
+	//若twin的metadata为deleted，那么将LastState设置为nil
 	if strings.Compare(twin.Metadata.Type, "deleted") == 0 {
 		document[key].LastState = nil
 	}
-
+	//初始化coles
 	cols := make(map[string]interface{})
-
+	//初始化syncResult[key]
 	syncResult := returnResult.SyncResult
 	syncResult[key] = &dttype.MsgTwin{}
+	//DeviceTwinUpdate
 	update := returnResult.Update
 	isChange := false
 	isSyncAllow := true
 	if msgTwin == nil {
 		return nil
 	}
+	//校验msgTwin.Value的数据类型是否合法
 	expectedOk, expectedErr := isTwinValueDiff(twin, msgTwin, DealExpected)
 	if expectedOk {
+		//取出msgTwin.Expected.Value
 		value := msgTwin.Expected.Value
 		meta := dttype.ValueMetadata{Timestamp: now}
+		//初始化twin.ExpectedVersion
 		if twin.ExpectedVersion == nil {
 			twin.ExpectedVersion = &dttype.TwinVersion{}
 		}
@@ -565,10 +616,13 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 		if dealType != RestDealType {
 			msgTwinExpectedVersion = msgTwin.ExpectedVersion
 		}
+		//校验并更新twin的expectVersion
 		ok, err := dealVersion(version, msgTwinExpectedVersion, dealType)
 		if !ok {
+			//若校验expectVersion失败,即拒绝同步
 			// if reject the sync,  set the syncResult and then send the edge_updated msg
-			if dealType != RestDealType {
+			if dealType != RestDealType { //msg并非来自mqtt
+				//将twin的信息写入syncResult[key]
 				syncResult[key].Expected = &dttype.TwinValue{Value: twin.Expected.Value, Metadata: twin.Expected.Metadata}
 				syncResult[key].ExpectedVersion = &dttype.TwinVersion{CloudVersion: twin.ExpectedVersion.CloudVersion, EdgeVersion: twin.ExpectedVersion.EdgeVersion}
 
@@ -579,13 +633,15 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 				var meta dttype.TypeMetadata
 				json.Unmarshal(metaJSON, &meta)
 				syncResult[key].Metadata = &meta
-
+				//不允许同步
 				isSyncAllow = false
 			} else {
+				//若msg来自于mqtt，返回异常
 				returnResult.Err = err
 				return err
 			}
 		} else {
+			//若校验成功，,即可以同步数据
 			metaJSON, _ := json.Marshal(meta)
 			versionJSON, _ := json.Marshal(version)
 			cols["expected"] = value
@@ -594,11 +650,14 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 			if twin.Expected == nil {
 				twin.Expected = &dttype.TwinValue{}
 			}
+			//将msgTwin的Expected.Value，赋值给twin
 			twin.Expected.Value = value
+			//当前时间
 			twin.Expected.Metadata = &meta
+			//twin的version，或者其更新过的version
 			twin.ExpectedVersion = version
 			// if rest update, set the syncResult and send the edge_updated msg
-			if dealType == RestDealType {
+			if dealType == RestDealType { //若msg来自于mqtt，更新syncResult
 				syncResult[key].Expected = &dttype.TwinValue{Value: value, Metadata: &meta}
 				syncResult[key].ExpectedVersion = &dttype.TwinVersion{CloudVersion: version.CloudVersion, EdgeVersion: version.EdgeVersion}
 				syncOptional := *twin.Optional
@@ -611,13 +670,15 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 			isChange = true
 		}
 	} else {
+		//若msgTwin.Value的数据类型不合法，且来自于mqtt，就返回err
 		if expectedErr != nil && dealType == RestDealType {
 			returnResult.Err = expectedErr
 			return expectedErr
 		}
 	}
+	//校验msgTwin的actual数据类型是否合法
 	actualOk, actualErr := isTwinValueDiff(twin, msgTwin, DealActual)
-	if actualOk && isSyncAllow {
+	if actualOk && isSyncAllow { //若actual数据类型合法，并且可以同步
 		value := msgTwin.Actual.Value
 		meta := dttype.ValueMetadata{Timestamp: now}
 		if twin.ActualVersion == nil {
@@ -628,9 +689,11 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 		if dealType != RestDealType {
 			msgTwinActualVersion = msgTwin.ActualVersion
 		}
+		//校验并更新twin的actualVersion
 		ok, err := dealVersion(version, msgTwinActualVersion, dealType)
-		if !ok {
-			if dealType != RestDealType {
+		if !ok { //若更新twin的actualVersion出现异常
+			if dealType != RestDealType { //若msg并非来自mqtt
+				//配置syncResult
 				syncResult[key].Actual = &dttype.TwinValue{Value: twin.Actual.Value, Metadata: twin.Actual.Metadata}
 				syncResult[key].ActualVersion = &dttype.TwinVersion{CloudVersion: twin.ActualVersion.CloudVersion, EdgeVersion: twin.ActualVersion.EdgeVersion}
 				syncOptional := *twin.Optional
@@ -641,10 +704,12 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 				syncResult[key].Metadata = &meta
 				isSyncAllow = false
 			} else {
+				//若msg来自mqtt，返回异常
 				returnResult.Err = err
 				return err
 			}
-		} else {
+		} else { //若更新twin的actualVersion成功
+			//配置cols和twin
 			metaJSON, _ := json.Marshal(meta)
 			versionJSON, _ := json.Marshal(version)
 			cols["actual"] = value
@@ -656,7 +721,7 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 			twin.Actual.Value = value
 			twin.Actual.Metadata = &meta
 			twin.ActualVersion = version
-			if dealType == RestDealType {
+			if dealType == RestDealType { //若msg来自于mqtt，还需配置syncResult
 				syncResult[key].Actual = &dttype.TwinValue{Value: msgTwin.Actual.Value, Metadata: &meta}
 				syncOptional := *twin.Optional
 				syncResult[key].Optional = &syncOptional
@@ -668,15 +733,15 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 			}
 			isChange = true
 		}
-	} else {
+	} else { //若actual数据类型不合法，返回err
 		if actualErr != nil && dealType == RestDealType {
 			returnResult.Err = actualErr
 			return actualErr
 		}
 	}
 
-	if isSyncAllow {
-		if msgTwin.Optional != nil {
+	if isSyncAllow { //若可以同步
+		if msgTwin.Optional != nil { //若msgTwin的option不为空，配置optional
 			if *msgTwin.Optional != *twin.Optional && *twin.Optional {
 				optional := *msgTwin.Optional
 				cols["optional"] = optional
@@ -688,15 +753,20 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 		}
 		// if update the deleted twin, allow to update attr_type
 		if msgTwin.Metadata != nil {
+			//若msgTwin.Metadata不为空，
+			//那么可以配置attr_type为msgTwin.Metadata.Type
 			msgMetaJSON, _ := json.Marshal(msgTwin.Metadata)
 			twinMetaJSON, _ := json.Marshal(twin.Metadata)
+			//若msgTwin和twin的metadata不一致
 			if strings.Compare(string(msgMetaJSON), string(twinMetaJSON)) != 0 {
 				meta := dttype.CopyMsgTwin(msgTwin, true)
 				meta.Metadata.Type = ""
 				metaJSON, _ := json.Marshal(meta.Metadata)
 				cols["metadata"] = string(metaJSON)
+				//若更新已删除的twin
 				if strings.Compare(twin.Metadata.Type, "deleted") == 0 {
 					cols["attr_type"] = msgTwin.Metadata.Type
+					//更新twin.Metadata.Type
 					twin.Metadata.Type = msgTwin.Metadata.Type
 					var meta dttype.TypeMetadata
 					json.Unmarshal(msgMetaJSON, &meta)
@@ -704,7 +774,7 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 				}
 				isChange = true
 			}
-		} else {
+		} else { //若msgTwin.Metadata为空，且twin.Metadata.Type为"deleted"
 			if strings.Compare(twin.Metadata.Type, "deleted") == 0 {
 				twin.Metadata = &dttype.TypeMetadata{Type: "string"}
 				cols["attr_type"] = "string"
@@ -714,7 +784,8 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 		}
 
 	}
-	if isChange {
+	if isChange { //若校验之后，可以修改
+		//将cols写入returnResult
 		update = append(update, dtclient.DeviceTwinUpdate{DeviceID: deviceID, Name: key, Cols: cols})
 		returnResult.Update = update
 		current := dttype.CopyMsgTwin(twin, true)
@@ -733,7 +804,7 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 			}
 		}
 
-	} else {
+	} else { //若校验之后，不可修改，清理现场
 		if dealType == RestDealType {
 			delete(document, key)
 			delete(syncResult, key)
@@ -750,6 +821,7 @@ func dealTwinCompare(returnResult *dttype.DealTwinResult, deviceID string, key s
 	return nil
 }
 
+//处理Twin和msgTwin的ADD过程
 func dealTwinAdd(returnResult *dttype.DealTwinResult, deviceID string, key string, twins map[string]*dttype.MsgTwin, msgTwin *dttype.MsgTwin, dealType int) error {
 	now := time.Now().UnixNano() / 1e6
 	document := returnResult.Document
@@ -881,7 +953,9 @@ func dealTwinAdd(returnResult *dttype.DealTwinResult, deviceID string, key strin
 	}
 
 	if isChange {
+		//将msgTwin的信息写入twins相应的key
 		twins[key] = dttype.DeviceTwinToMsgTwin([]dtclient.DeviceTwin{deviceTwin})[key]
+		//将msgTwin信息写入result
 		add := returnResult.Add
 		add = append(add, deviceTwin)
 		returnResult.Add = add
@@ -896,11 +970,11 @@ func dealTwinAdd(returnResult *dttype.DealTwinResult, deviceID string, key strin
 
 		copySync := dttype.CopyMsgTwin(twins[key], false)
 		syncResult[key] = &copySync
-		if dealType == RestDealType {
+		if dealType == RestDealType { //如果来自mqtt
 			copyResult := dttype.CopyMsgTwin(syncResult[key], true)
 			returnResult.Result[key] = &copyResult
 			returnResult.SyncResult = syncResult
-		} else {
+		} else { //如果不是来自mqtt
 			delete(syncResult, key)
 		}
 
@@ -928,10 +1002,11 @@ func DealMsgTwin(context *dtcontext.DTContext, deviceID string, msgTwins map[str
 		SyncResult: syncResult,
 		Document:   document,
 		Err:        nil}
-
+	//检查deviceID
 	deviceModel, ok := context.GetDevice(deviceID)
 	if !ok {
 		klog.Errorf("invalid device id")
+		//返回错误结果
 		return dttype.DealTwinResult{Add: add,
 			Delete:     deletes,
 			Update:     update,
@@ -940,7 +1015,7 @@ func DealMsgTwin(context *dtcontext.DTContext, deviceID string, msgTwins map[str
 			Document:   document,
 			Err:        errors.New("invalid device id")}
 	}
-
+	//格式转化，若Device.Twin为空；新建一个
 	twins := deviceModel.Twin
 	if twins == nil {
 		deviceModel.Twin = make(map[string]*dttype.MsgTwin)
@@ -949,22 +1024,33 @@ func DealMsgTwin(context *dtcontext.DTContext, deviceID string, msgTwins map[str
 
 	var err error
 	for key, msgTwin := range msgTwins {
+		//msgTwin中有的key，在twin中也有
 		if twin, exist := twins[key]; exist {
+			//若msgTwin元数据为nil
 			if dealType >= 1 && msgTwin != nil && (msgTwin.Metadata == nil) {
 				klog.Infof("Not found metadata of twin")
 			}
+			//msgTwin的metadata类型为“deleted”
 			if msgTwin == nil && dealType == 0 || dealType >= 1 && strings.Compare(msgTwin.Metadata.Type, "deleted") == 0 {
+				//执行Twin的Delete操作
+				//比较twin和msgTwin的version，进行twin的version更新  或  在result里删除key
 				err = dealTwinDelete(&returnResult, deviceID, key, twin, msgTwin, dealType)
 				if err != nil {
 					return returnResult
 				}
 				continue
 			}
+			//若不为deleted，执行Twin的比较操作
+			//校验twin和msgTwin的版本信息，进行twin的actualVersion和exceptVersion的更新
+			//若更新版本信息，则同步value等其他信息
+			//将同步的信息过程写入result
 			err = dealTwinCompare(&returnResult, deviceID, key, twin, msgTwin, dealType)
 			if err != nil {
 				return returnResult
 			}
 		} else {
+			//msgTwin中有的key，在twin中不存在
+			//执行Twin的add操作
 			err = dealTwinAdd(&returnResult, deviceID, key, twins, msgTwin, dealType)
 			if err != nil {
 				return returnResult

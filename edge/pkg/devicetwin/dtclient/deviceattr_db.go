@@ -98,10 +98,12 @@ func UpdateDeviceAttrMulti(updates []DeviceAttrUpdate) error {
 }
 
 //DeviceAttrTrans transaction of device attr
+//使用DB事务对DB的数据进行增删和更新
 func DeviceAttrTrans(adds []DeviceAttr, deletes []DeviceDelete, updates []DeviceAttrUpdate) error {
 	var err error
 	obm := dbm.DBAccess
-	obm.Begin()
+	obm.Begin() //开启事务
+	//若有add操作，则把新的device写入DB
 	for _, add := range adds {
 		err = SaveDeviceAttr(&add)
 		if err != nil {
@@ -109,7 +111,7 @@ func DeviceAttrTrans(adds []DeviceAttr, deletes []DeviceDelete, updates []Device
 			return err
 		}
 	}
-
+	//若有delete操作，则把DB中相应的数据删除
 	for _, delete := range deletes {
 		err = DeleteDeviceAttr(delete.DeviceID, delete.Name)
 		if err != nil {
@@ -117,7 +119,7 @@ func DeviceAttrTrans(adds []DeviceAttr, deletes []DeviceDelete, updates []Device
 			return err
 		}
 	}
-
+	//若有update操作，则把更新DB中的数据
 	for _, update := range updates {
 		err = UpdateDeviceAttrFields(update.DeviceID, update.Name, update.Cols)
 		if err != nil {
@@ -125,6 +127,6 @@ func DeviceAttrTrans(adds []DeviceAttr, deletes []DeviceDelete, updates []Device
 			return err
 		}
 	}
-	obm.Commit()
+	obm.Commit() //提交事务
 	return nil
 }

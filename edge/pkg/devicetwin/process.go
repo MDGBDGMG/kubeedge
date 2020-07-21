@@ -36,7 +36,7 @@ func (dt *DeviceTwin) RegisterDTModule(name string) {
 	dt.HeartBeatToModule[name] = make(chan interface{}, 128)   //心跳Channel
 	module.InitWorker(dt.DTContexts.CommChan[name], dt.DTContexts.ConfirmChan,
 		dt.HeartBeatToModule[name], dt.DTContexts) //分类初始化dt.DTContexts里面的Module
-	dt.DTModules[name] = module
+	dt.DTModules[name] = module //将初始化完毕的worker放入MAP中
 
 }
 
@@ -141,7 +141,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	}
 
 	defer context.Unlock(deviceID)
-	context.Lock(deviceID)
+	context.Lock(deviceID) //将此ID加锁
 	//从db中查询device列表，返回Device信息
 	devices, err := dtclient.QueryDevice("id", deviceID)
 	if err != nil {
@@ -152,7 +152,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		return errors.New("Not found device from db")
 	}
 	device := (*devices)[0]
-	//按照key过滤，查找DeviceAttr属性信息
+	//从db中按照key过滤，查找DeviceAttr属性信息
 	deviceAttr, err := dtclient.QueryDeviceAttr("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device attr failed: %v", err)
@@ -162,7 +162,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	for _, attr := range *deviceAttr {
 		attributes = append(attributes, attr)
 	}
-	//按照key过滤，查找DeviceTwin性信息
+	//从db中按照key过滤，查找DeviceTwin信息
 	deviceTwin, err := dtclient.QueryDeviceTwin("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device twin failed: %v", err)
@@ -179,8 +179,8 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		Description: device.Description,
 		State:       device.State,
 		LastOnline:  device.LastOnline,
-		Attributes:  dttype.DeviceAttrToMsgAttr(attributes),
-		Twin:        dttype.DeviceTwinToMsgTwin(twins)})
+		Attributes:  dttype.DeviceAttrToMsgAttr(attributes), //转化数据格式
+		Twin:        dttype.DeviceTwinToMsgTwin(twins)})     //转化数据格式
 
 	return nil
 }
@@ -271,11 +271,15 @@ func classifyMsg(message *dttype.DTMessage) bool {
 	return false
 }
 
+//启动DeviceTwin服务
 func (dt *DeviceTwin) runDeviceTwin() {
 
 	moduleNames := []string{dtcommon.MemModule, dtcommon.TwinModule, dtcommon.DeviceModule, dtcommon.CommModule}
 	for _, v := range moduleNames {
-		dt.RegisterDTModule(v) //将module分类进行初始化。创建worker和所属类别
+		//将module分类进行初始化。
+		//创建Membership、Twin、Device、communicate四个worker
+		dt.RegisterDTModule(v)
+		//启动上述四个worker
 		go dt.DTModules[v].Start()
 	}
 	go func() {

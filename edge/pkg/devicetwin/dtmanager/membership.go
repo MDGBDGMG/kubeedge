@@ -29,19 +29,20 @@ type MemWorker struct {
 	Group string
 }
 
-//Start worker
+//Start Membership Worker
 func (mw MemWorker) Start() {
 	initMemActionCallBack()
-	for {
+	for { //无限循环
 		select {
-		case msg, ok := <-mw.ReceiverChan:
+		case msg, ok := <-mw.ReceiverChan: //若接到membershipWorker信息
 			if !ok {
 				return
 			}
 			if dtMsg, isDTMessage := msg.(*dttype.DTMessage); isDTMessage {
+				//按action执行命令
 				if fn, exist := memActionCallBack[dtMsg.Action]; exist {
 					_, err := fn(mw.DTContexts, dtMsg.Identity, dtMsg.Msg)
-					if err != nil {
+					if err != nil { //检查数据是否有异常
 						klog.Errorf("MemModule deal %s event failed: %v", dtMsg.Action, err)
 					}
 				} else {
@@ -49,7 +50,7 @@ func (mw MemWorker) Start() {
 				}
 			}
 
-		case v, ok := <-mw.HeartBeatChan:
+		case v, ok := <-mw.HeartBeatChan: //若收到heartBeat信息，信息
 			if !ok {
 				return
 			}
@@ -61,8 +62,11 @@ func (mw MemWorker) Start() {
 }
 
 func initMemActionCallBack() {
+	//创建CallBack的MAP
 	memActionCallBack = make(map[string]CallBack)
+	//校验数据，转化格式为payload，发送Edge、CommunicateModule组件中
 	memActionCallBack[dtcommon.MemGet] = dealMerbershipGet
+	//
 	memActionCallBack[dtcommon.MemUpdated] = dealMembershipUpdated
 	memActionCallBack[dtcommon.MemDetailResult] = dealMembershipDetail
 }
@@ -121,12 +125,12 @@ func dealMembershipUpdated(context *dtcontext.DTContext, resource string, msg in
 	if !ok {
 		return nil, errors.New("msg not Message type")
 	}
-
+	//转化格式为字节数组
 	contentData, ok := message.Content.([]byte)
 	if !ok {
 		return nil, errors.New("assertion failed")
 	}
-
+	//将数据解析为MemberShipUpdate格式{baseMessage，add []device，reomve []device}
 	updateEdgeGroups, err := dttype.UnmarshalMembershipUpdate(contentData)
 	if err != nil {
 		klog.Errorf("Unmarshal membership info failed , err: %#v", err)
@@ -134,6 +138,7 @@ func dealMembershipUpdated(context *dtcontext.DTContext, resource string, msg in
 	}
 
 	baseMessage := dttype.BaseMessage{EventID: updateEdgeGroups.EventID}
+	//若addDevcie有数据，那么将数据跌入
 	if updateEdgeGroups.AddDevices != nil && len(updateEdgeGroups.AddDevices) > 0 {
 		//add device
 		Added(context, updateEdgeGroups.AddDevices, baseMessage, false)
@@ -147,16 +152,17 @@ func dealMembershipUpdated(context *dtcontext.DTContext, resource string, msg in
 
 func dealMerbershipGet(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	klog.Infof("MEMBERSHIP EVENT")
-	message, ok := msg.(*model.Message)
+	message, ok := msg.(*model.Message) //转为Message
 	if !ok {
 		return nil, errors.New("msg not Message type")
 	}
 
-	contentData, ok := message.Content.([]byte)
+	contentData, ok := message.Content.([]byte) //转为字节数组
 	if !ok {
 		return nil, errors.New("assertion failed")
 	}
-
+	//解析消息，消息转化格式，与DeviceList包装为一个payload
+	//将payload包装为Message，发送到Edge、CommunicateModule组件中
 	DealGetMembership(context, contentData)
 	return nil, nil
 }
@@ -309,10 +315,11 @@ func Removed(context *dtcontext.DTContext, toRemove []dttype.Device, baseMessage
 func DealGetMembership(context *dtcontext.DTContext, payload []byte) error {
 	klog.Info("Deal getting membership event")
 	result := []byte("")
+	//将event msg由json格式转为BaseMessage{eventId，timestamp}
 	edgeGet, err := dttype.UnmarshalBaseMessage(payload)
 	para := dttype.Parameter{}
-	now := time.Now().UnixNano() / 1e6
-	if err != nil {
+	now := time.Now().UnixNano() / 1e6 //获取当前时间
+	if err != nil {                    //若转化格式失败，则报异常
 		klog.Errorf("Unmarshal get membership info %s failed , err: %#v", string(payload), err)
 		para.Code = dtcommon.BadRequestCode
 		para.Reason = fmt.Sprintf("Unmarshal get membership info %s failed , err: %#v", string(payload), err)
@@ -321,9 +328,9 @@ func DealGetMembership(context *dtcontext.DTContext, payload []byte) error {
 		if jsonErr != nil {
 			klog.Errorf("Unmarshal error result error, err: %v", jsonErr)
 		}
-	} else {
-		para.EventID = edgeGet.EventID
-		var devices []*dttype.Device
+	} else { //若转化格式成功
+		para.EventID = edgeGet.EventID //获取EventID
+		var devices []*dttype.Device   //遍历DeviceList，将数据转化为Device，写入Device数组
 		context.DeviceList.Range(func(key interface{}, value interface{}) bool {
 			deviceModel, ok := value.(*dttype.Device)
 			if !ok {
@@ -333,18 +340,19 @@ func DealGetMembership(context *dtcontext.DTContext, payload []byte) error {
 			}
 			return true
 		})
-
+		//将event的ID与deviceList转化格式为json
 		payload, err := dttype.BuildMembershipGetResult(dttype.BaseMessage{EventID: edgeGet.EventID, Timestamp: now}, devices)
 		if err != nil {
 			klog.Errorf("Marshal membership failed while deal get membership ,err: %#v", err)
 		} else {
-			result = payload
+			result = payload //将json赋值给result（字节数组）
 		}
 
 	}
+	//组合为一个topic
 	topic := dtcommon.MemETPrefix + context.NodeName + dtcommon.MemETGetResultSuffix
 	klog.Infof("Deal getting membership successful and send the result")
-
+	//将payload包装为Message，发送到Edge、CommunicateModule组件中
 	context.Send("",
 		dtcommon.SendToEdge,
 		dtcommon.CommModule,
@@ -355,14 +363,15 @@ func DealGetMembership(context *dtcontext.DTContext, payload []byte) error {
 }
 
 //SyncDeviceFromSqlite sync device from sqlite
+//从sqlite中同步device信息到Context.DeviceList中
 func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 	klog.Infof("Sync device detail info from DB of device %s", deviceID)
 	_, exist := context.GetDevice(deviceID)
-	if !exist {
-		var deviceMutex sync.Mutex
+	if !exist { //检查Device是否存在于DeviceList中
+		var deviceMutex sync.Mutex //将deviceID写入DeviceMutex的Map中
 		context.DeviceMutex.Store(deviceID, &deviceMutex)
 	}
-
+	//从DB中查询deviceID，获取Device信息
 	devices, err := dtclient.QueryDevice("id", deviceID)
 	if err != nil {
 		klog.Errorf("query device attr failed: %v", err)
@@ -372,19 +381,19 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		return errors.New("Not found device")
 	}
 	dbDoc := (*devices)[0]
-
+	//从DB中查询deviceID，获取DeviceAttr信息
 	deviceAttr, err := dtclient.QueryDeviceAttr("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device attr failed: %v", err)
 		return err
 	}
-
+	//从DB中查询deviceID，获取DeviceTwin信息
 	deviceTwin, err := dtclient.QueryDeviceTwin("deviceid", deviceID)
 	if err != nil {
 		klog.Errorf("query device twin failed: %v", err)
 		return err
 	}
-
+	//将信息存储到DeviceList中
 	context.DeviceList.Store(deviceID, &dttype.Device{
 		ID:          deviceID,
 		Name:        dbDoc.Name,

@@ -114,11 +114,12 @@ func MsgAttrToDeviceAttr(name string, msgAttr *MsgAttr) dtclient.DeviceAttr {
 }
 
 //CopyMsgTwin copy msg twin
+//将MsgTwin指针中的数据拿出来，写入MsgTwin中
 func CopyMsgTwin(msgTwin *MsgTwin, noVersion bool) MsgTwin {
 	var result MsgTwin
 	payload, _ := json.Marshal(msgTwin)
 	json.Unmarshal(payload, &result)
-	if noVersion {
+	if noVersion { //若noversion为1
 		result.ActualVersion = nil
 		result.ExpectedVersion = nil
 	}
@@ -203,7 +204,7 @@ func BuildMembershipGetResult(baseMessage BaseMessage, devices []*Device) ([]byt
 			State:       v.State,
 			LastOnline:  v.LastOnline,
 			Attributes:  v.Attributes})
-	}
+	} //将Device数据写入result，将baseMessage和result写入struct，转为JSON
 	payload, err := json.Marshal(MembershipGetResult{BaseMessage: baseMessage, Devices: result})
 	if err != nil {
 		return []byte(""), err

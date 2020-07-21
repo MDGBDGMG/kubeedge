@@ -64,13 +64,13 @@ func (dtc *DTContext) CommTo(dtmName string, content interface{}) error {
 
 //HeartBeat hearbeat to dtcontroller
 func (dtc *DTContext) HeartBeat(dtmName string, content interface{}) error {
-	if strings.Compare(content.(string), "ping") == 0 {
+	if strings.Compare(content.(string), "ping") == 0 { //校验ping，并记录当前时间到sync.Map
 		dtc.ModulesHealth.Store(dtmName, time.Now().Unix())
 		klog.Infof("%s is healthy %v", dtmName, time.Now().Unix())
 
 	} else if strings.Compare(content.(string), "stop") == 0 {
-		klog.Infof("%s stop", dtmName)
-		return errors.New("stop")
+		klog.Infof("%s stop", dtmName) //若string为stop
+		return errors.New("stop")      //抛异常，返回stop
 	}
 	return nil
 }

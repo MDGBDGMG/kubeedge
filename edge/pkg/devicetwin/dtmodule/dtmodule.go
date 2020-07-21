@@ -62,10 +62,10 @@ func (dm *DTModule) InitWorker(recv chan interface{}, confirm chan interface{}, 
 
 //Start module, actual worker start
 func (dm DTModule) Start() { //启动worker
-	defer func() {
+	defer func() { //收尾函数，若出现异常，则打印异常日志
 		if err := recover(); err != nil {
 			klog.Infof("%s in twin panic", dm.Name)
 		}
 	}()
-	dm.Worker.Start()
+	dm.Worker.Start() //启动Worker（CommWorker、DeviceWorker、TwinWorker、MemWorker）
 }
