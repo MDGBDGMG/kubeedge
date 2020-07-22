@@ -82,11 +82,23 @@ func initTwinActionCallBack() {
 	//init仅执行一次
 	initTwinActionCallBackOnce.Do(func() {
 		twinActionCallBack = make(map[string]CallBack)
-		//
+		//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；
+		//将更新过的twin信息写入DB
+		//将twin与msgTwin的比较结果，经由community发布到mqtt
+		//将syncResult，经由community发布到cloud
+
+		//SyncDealType为0，即msg来自于mqtt，那么就是将twin的actualversion自己加1
 		twinActionCallBack[dtcommon.TwinUpdate] = dealTwinUpdate
-		//
+
+		//校验msg，将msg中包含的twin event包装为payload，发布到edge的mqtt
 		twinActionCallBack[dtcommon.TwinGet] = dealTwinGet
-		//
+
+		//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；
+		//将更新过的twin信息写入DB
+		//将twin与msgTwin的比较结果，经由community发布到mqtt
+		//将syncResult，经由community发布到cloud
+
+		//SyncDealType为1，即msg来自于并非，那么就是将cloud的actualversion和exceptversion给twin
 		twinActionCallBack[dtcommon.TwinCloudSync] = dealTwinSync
 	})
 }
@@ -102,7 +114,7 @@ func dealTwinSync(context *dtcontext.DTContext, resource string, msg interface{}
 	if !ok {
 		return nil, errors.New("invalid message content")
 	}
-
+	//解析msg为msgTwin
 	msgTwin, err := dttype.UnmarshalDeviceTwinUpdate(content)
 	if err != nil {
 		klog.Errorf("Unmarshal update request body failed, err: %#v", err)
@@ -113,12 +125,18 @@ func dealTwinSync(context *dtcontext.DTContext, resource string, msg interface{}
 	klog.Infof("Begin to update twin of the device %s", resource)
 	eventID := msgTwin.EventID
 	context.Lock(resource)
+	//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+	//将twin与msgTwin的比较结果，经由community发布到mqtt
+	//将syncResult，经由community发布到cloud
+
+	//SyncDealType为1，那么就是将cloud的actualversion和exceptversion给twin
 	DealDeviceTwin(context, resource, eventID, msgTwin.Twin, SyncDealType)
 	context.Unlock(resource)
 	//todo send ack
 	return nil, nil
 }
 
+//校验msg，将msg中包含的twin event包装为payload，发布到edge的mqtt
 func dealTwinGet(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	klog.Infof("Twin Get EVENT")
 	message, ok := msg.(*model.Message)
@@ -130,11 +148,14 @@ func dealTwinGet(context *dtcontext.DTContext, resource string, msg interface{})
 	if !ok {
 		return nil, errors.New("invalid message content")
 	}
-
+	//将twinevent包装为payload，发布到edge的mqtt
 	DealGetTwin(context, resource, content)
 	return nil, nil
 }
 
+//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+//将twin与msgTwin的比较结果，经由community发布到mqtt
+//将syncResult，经由community发布到cloud
 func dealTwinUpdate(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	klog.Infof("Twin Update EVENT")
 	message, ok := msg.(*model.Message)
@@ -149,6 +170,9 @@ func dealTwinUpdate(context *dtcontext.DTContext, resource string, msg interface
 
 	context.Lock(resource)
 	//执行updated操作
+	//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+	//将twin与msgTwin的比较结果，经由community发布到mqtt
+	//将syncResult，经由community发布到cloud
 	Updated(context, resource, content)
 	context.Unlock(resource)
 	return nil, nil
@@ -156,6 +180,9 @@ func dealTwinUpdate(context *dtcontext.DTContext, resource string, msg interface
 
 // Updated update the snapshot
 //更新快照
+//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+//将twin与msgTwin的比较结果，经由community发布到mqtt
+//将syncResult，经由community发布到cloud
 func Updated(context *dtcontext.DTContext, deviceID string, payload []byte) {
 	result := []byte("")
 	msg, err := dttype.UnmarshalDeviceTwinUpdate(payload) //格式转化
@@ -169,10 +196,18 @@ func Updated(context *dtcontext.DTContext, deviceID string, payload []byte) {
 	klog.Infof("Begin to update twin of the device %s", deviceID)
 	eventID := msg.EventID
 	//若格式转化成功
+	//处理设备孪生
+	//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+	//将twin与msgTwin的比较结果，经由community发布到mqtt
+	//将syncResult，经由community发布到cloud
 	DealDeviceTwin(context, deviceID, eventID, msg.Twin, RestDealType)
 }
 
 //DealDeviceTwin deal device twin
+//处理设备孪生
+//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；将更新过的twin信息写入DB
+//将twin与msgTwin的比较结果，经由community发布到mqtt
+//将syncResult，经由community发布到cloud
 func DealDeviceTwin(context *dtcontext.DTContext, deviceID string, eventID string, msgTwin map[string]*dttype.MsgTwin, dealType int) error {
 	klog.Infof("Begin to deal device twin of the device %s", deviceID)
 	now := time.Now().UnixNano() / 1e6
@@ -192,18 +227,27 @@ func DealDeviceTwin(context *dtcontext.DTContext, deviceID string, eventID strin
 		dealUpdateResult(context, deviceID, eventID, dtcommon.BadRequestCode, err, result)
 		return err
 	}
+	//比较device的twin信息和MsgTwin中信息的区别，并将比较结果写入result；返回比较结果
+	//新建/更新/删除device的twin信息，并将device写入context.deviceList管理起来
 	dealTwinResult := DealMsgTwin(context, deviceID, content, dealType)
 
 	add, deletes, update := dealTwinResult.Add, dealTwinResult.Delete, dealTwinResult.Update
+	//若msg来自mqtt，并且twin信息的比较结果有异常
 	if dealType == RestDealType && dealTwinResult.Err != nil {
+		//那么从sqlite中同步device信息到Context.DeviceList中
 		SyncDeviceFromSqlite(context, deviceID)
 		err = dealTwinResult.Err
+		//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
 		updateResult, _ := dttype.BuildDeviceTwinResult(dttype.BaseMessage{EventID: eventID, Timestamp: now}, dealTwinResult.Result, 0)
+		//将result经过CommWorker,发送到edge的busgroup的channel
 		dealUpdateResult(context, deviceID, eventID, dtcommon.BadRequestCode, err, updateResult)
+		//返回异常
 		return err
 	}
+	//若device的twin和msgTwin比较过程中，有add、delete、update操作
 	if len(add) != 0 || len(deletes) != 0 || len(update) != 0 {
 		for i := 1; i <= dtcommon.RetryTimes; i++ {
+			//开启事务，将DB中的device twin信息进行相应的add、delete、update
 			err = dtclient.DeviceTwinTrans(add, deletes, update)
 			if err == nil {
 				break
@@ -211,30 +255,46 @@ func DealDeviceTwin(context *dtcontext.DTContext, deviceID string, eventID strin
 			time.Sleep(dtcommon.RetryInterval)
 		}
 		if err != nil {
+			////从sqlite中同步device信息到Context.DeviceList中
 			SyncDeviceFromSqlite(context, deviceID)
+			//打印异常
 			klog.Errorf("Update device twin failed due to writing sql error: %v", err)
 		}
 	}
-
+	//若deviceTwin组件与DB操作时有异常
 	if err != nil && dealType == RestDealType {
+		//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
 		updateResult, _ := dttype.BuildDeviceTwinResult(dttype.BaseMessage{EventID: eventID, Timestamp: now}, dealTwinResult.Result, dealType)
+		//将result经过CommWorker,发送到edge的busgroup的channel
 		dealUpdateResult(context, deviceID, eventID, dtcommon.InternalErrorCode, err, updateResult)
+		//返回异常
 		return err
 	}
+	//若msg来自mqtt
 	if dealType == RestDealType {
+		//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
 		updateResult, _ := dttype.BuildDeviceTwinResult(dttype.BaseMessage{EventID: eventID, Timestamp: now}, dealTwinResult.Result, dealType)
+		//将result经过CommWorker,发送到edge的busgroup的channel
 		dealUpdateResult(context, deviceID, eventID, dtcommon.InternalErrorCode, nil, updateResult)
 	}
+	//若document(twin信息)存在
 	if len(dealTwinResult.Document) > 0 {
+		////将document(twin信息)打包为payload，将payload经由communityWorker，发送到edge，然后让busGroup对上述topic执行publish操作
 		dealDocument(context, deviceID, dttype.BaseMessage{EventID: eventID, Timestamp: now}, dealTwinResult.Document)
 	}
-
+	//构建一个payload，包含{eventID，timestamp，DeviceTwin，delta}
 	delta, ok := dttype.BuildDeviceTwinDelta(dttype.BuildBaseMessage(), deviceModel.Twin)
 	if ok {
+		//若构建delta成功，则
+		//将delta的payload，经由communityWorker，发送到busgroup，
+		//对"$hw/events/device/"+deviceID+"/twin/update/delta"的topic执行publish操作
 		dealDelta(context, deviceID, delta)
 	}
-
+	//若dealTwinResult.SyncResult有数据
 	if len(dealTwinResult.SyncResult) > 0 {
+		//将syncresult信息打包为payload，经由communityWorker，将信息发送到cloud的resource组
+		//对于resource进行update操作
+		//将信息同步到cloud
 		dealSyncResult(context, deviceID, dttype.BuildBaseMessage(), dealTwinResult.SyncResult)
 	}
 	return nil
@@ -272,7 +332,10 @@ func dealUpdateResult(context *dtcontext.DTContext, deviceID string, eventID str
 }
 
 // dealDelta  send delta
+//将delta的payload，经由communityWorker，发送到busgroup，对"$hw/events/device/"+deviceID+"/twin/update/delta"
+//的topic执行publish操作
 func dealDelta(context *dtcontext.DTContext, deviceID string, payload []byte) error {
+	//"$hw/events/device/"+deviceID+"/twin/update/delta"
 	topic := dtcommon.DeviceETPrefix + deviceID + dtcommon.TwinETDeltaSuffix
 	klog.Infof("Deal delta of device %s: send delta", deviceID)
 	return context.Send("",
@@ -282,6 +345,9 @@ func dealDelta(context *dtcontext.DTContext, deviceID string, payload []byte) er
 }
 
 // dealSyncResult build and send sync result, is delta update
+//将syncresult信息打包为payload，经由communityWorker，将信息发送到cloud的resource组
+//对于resource进行update操作
+//将信息同步到cloud
 func dealSyncResult(context *dtcontext.DTContext, deviceID string, baseMessage dttype.BaseMessage, twin map[string]*dttype.MsgTwin) error {
 
 	klog.Infof("Deal sync result of device %s: sync with cloud", deviceID)
@@ -293,12 +359,16 @@ func dealSyncResult(context *dtcontext.DTContext, deviceID string, baseMessage d
 }
 
 //dealDocument build document and save current state as last state, update sqlite
+//将document(twin信息)打包为payload，将payload经由communityWorker，发送到edge，然后让busGroup对上述topic执行publish操作
 func dealDocument(context *dtcontext.DTContext, deviceID string, baseMessage dttype.BaseMessage, twinDocument map[string]*dttype.TwinDoc) error {
 
 	klog.Infof("Deal document of device %s: build and send document", deviceID)
+	//构建payload，内容为{eventId，timestamp，Twin信息}
 	payload, _ := dttype.BuildDeviceTwinDocument(baseMessage, twinDocument)
+	//构建topic："$hw/events/device/"+deviceid+"/twin/update/document"
 	topic := dtcommon.DeviceETPrefix + deviceID + dtcommon.TwinETDocumentSuffix
 	klog.Infof("Deal document of device %s: send document", deviceID)
+	//将payload经由communityWorker，发送到edge，然后让busGroup对上述topic执行publish操作
 	return context.Send("",
 		dtcommon.SendToEdge,
 		dtcommon.CommModule,
@@ -306,13 +376,15 @@ func dealDocument(context *dtcontext.DTContext, deviceID string, baseMessage dtt
 }
 
 // DealGetTwin deal get twin event
+//将twinevent包装为payload，发布到edge的mqtt
 func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) error {
 
 	klog.Info("Deal the event of getting twin")
 	msg := []byte("")
 	para := dttype.Parameter{}
+	//解析payload
 	edgeGet, err := dttype.UnmarshalBaseMessage(payload)
-	if err != nil {
+	if err != nil { //解析payload失败返回异常
 		klog.Errorf("Unmarshal twin info %s failed , err: %#v", string(payload), err)
 		para.Code = dtcommon.BadRequestCode
 		para.Reason = fmt.Sprintf("Unmarshal twin info %s failed , err: %#v", string(payload), err)
@@ -322,10 +394,10 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 			klog.Errorf("Unmarshal error result error, err: %v", jsonErr)
 			return jsonErr
 		}
-	} else {
+	} else { //解析payload成功
 		para.EventID = edgeGet.EventID
 		doc, exist := context.GetDevice(deviceID)
-		if !exist {
+		if !exist { //若在context中找不到payload中的deviceID
 			klog.Errorf("Device %s not found while getting twin", deviceID)
 			para.Code = dtcommon.NotFoundCode
 			para.Reason = fmt.Sprintf("Device %s not found while getting twin", deviceID)
@@ -335,11 +407,12 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 				klog.Errorf("Unmarshal error result error, err: %v", jsonErr)
 				return jsonErr
 			}
-		} else {
+		} else { //若在contex存在payload中的deviceID
 			now := time.Now().UnixNano() / 1e6
 			var err error
+			//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
 			msg, err = dttype.BuildDeviceTwinResult(dttype.BaseMessage{EventID: edgeGet.EventID, Timestamp: now}, doc.Twin, RestDealType)
-			if err != nil {
+			if err != nil { //若有异常，处理异常
 				klog.Errorf("Build state while deal get twin err: %#v", err)
 				para.Code = dtcommon.InternalErrorCode
 				para.Reason = fmt.Sprintf("Build state while deal get twin err: %#v", err)
@@ -352,6 +425,7 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 			}
 		}
 	}
+	//将payload经由communityWorker发布到Edge的busgroup，然后对topic进行publish
 	topic := dtcommon.DeviceETPrefix + deviceID + dtcommon.TwinETGetResultSuffix
 	klog.Infof("Deal the event of getting twin of device %s: send result ", deviceID)
 	return context.Send("",
@@ -362,6 +436,10 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 
 //dealtype 0:update ,2:cloud_update,1:detail result,3:deleted
 //校验twin和msgTwin的版本是否正常，然后将msgTwin版本赋值给twin
+//若dealType为0：version.EdgeVersion自行加1
+//若dealType不为0：将msgTwin的版本赋值给twin，即提升/未改变twin的版本
+//		        version.CloudVersion = reqVesion.CloudVersion
+//		        version.EdgeVersion = reqVesion.EdgeVersion
 func dealVersion(version *dttype.TwinVersion, reqVesion *dttype.TwinVersion, dealType int) (bool, error) {
 	if dealType == RestDealType { //若来自mqtt
 		//将twin的edgeversion加1
@@ -403,6 +481,9 @@ func dealTwinDelete(returnResult *dttype.DealTwinResult, deviceID string, key st
 	syncResult[key] = &dttype.MsgTwin{}
 	update := returnResult.Update
 	isChange := false
+	//两种情况
+	//1.msg来自mqtt：且msgTwin为nil。
+	//2.msg并非来自mqtt，且msgTwin的tpye为deleted
 	if msgTwin == nil && dealType == RestDealType && *twin.Optional || dealType >= SyncDealType && strings.Compare(msgTwin.Metadata.Type, "deleted") == 0 {
 		if twin.Metadata != nil && strings.Compare(twin.Metadata.Type, "deleted") == 0 {
 			return nil
@@ -988,6 +1069,8 @@ func dealTwinAdd(returnResult *dttype.DealTwinResult, deviceID string, key strin
 }
 
 //DealMsgTwin get diff while updating twin
+//比较device的twin信息和MsgTwin中信息的区别，并将比较结果写入result；
+//新建/更新/删除device的twin信息，并将device写入context.deviceList管理起来
 func DealMsgTwin(context *dtcontext.DTContext, deviceID string, msgTwins map[string]*dttype.MsgTwin, dealType int) dttype.DealTwinResult {
 	add := make([]dtclient.DeviceTwin, 0)
 	deletes := make([]dtclient.DeviceDelete, 0)
@@ -1059,6 +1142,7 @@ func DealMsgTwin(context *dtcontext.DTContext, deviceID string, msgTwins map[str
 		}
 
 	}
+	//将device写入deviceList中
 	context.DeviceList.Store(deviceID, deviceModel)
 	return returnResult
 }

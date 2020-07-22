@@ -89,6 +89,7 @@ func UpdateDeviceMulti(updates []DeviceUpdate) error {
 }
 
 //AddDeviceTrans the transaction of add device
+//使用DB事务将Device、DeviceAttr和DeviceTwin写入DB
 func AddDeviceTrans(adds []Device, addAttrs []DeviceAttr, addTwins []DeviceTwin) error {
 	var err error
 	obm := dbm.DBAccess
@@ -123,21 +124,25 @@ func AddDeviceTrans(adds []Device, addAttrs []DeviceAttr, addTwins []DeviceTwin)
 }
 
 //DeleteDeviceTrans the transaction of delete device
+//从DB中依据DeviceID移除Device、DeviceAttr、DeviceTwin
 func DeleteDeviceTrans(deletes []string) error {
 	var err error
 	obm := dbm.DBAccess
 	obm.Begin()
 	for _, delete := range deletes {
+		//移除Device
 		err = DeleteDeviceByID(delete)
 		if err != nil {
 			obm.Rollback()
 			return err
 		}
+		//移除DeviceAttr
 		err = DeleteDeviceAttrByDeviceID(delete)
 		if err != nil {
 			obm.Rollback()
 			return err
 		}
+		//移除DeviceTwin
 		err = DeleteDeviceTwinByDeviceID(delete)
 		if err != nil {
 			obm.Rollback()

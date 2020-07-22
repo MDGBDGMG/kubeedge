@@ -63,6 +63,7 @@ type MembershipDetail struct {
 }
 
 //MembershipUpdate the struct of membership update
+//{EventID，Timestamp，AddDevices，RemoveDevices}
 type MembershipUpdate struct {
 	BaseMessage
 	AddDevices    []Device `json:"added_devices"`
@@ -70,6 +71,8 @@ type MembershipUpdate struct {
 }
 
 //MarshalMembershipUpdate marshal membership update
+//将MembershipUpdate中Metadata.Type为delete的device信息设为nil
+//将上述信息构建一个payload
 func MarshalMembershipUpdate(result MembershipUpdate) ([]byte, error) {
 	for i := range result.AddDevices {
 		if result.AddDevices[i].Twin != nil {

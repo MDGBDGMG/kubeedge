@@ -97,11 +97,13 @@ func UpdateDeviceTwinMulti(updates []DeviceTwinUpdate) error {
 }
 
 //DeviceTwinTrans transaction of device twin
+//开启事务，将DB中的device twin信息进行相应的add、delete、update
 func DeviceTwinTrans(adds []DeviceTwin, deletes []DeviceDelete, updates []DeviceTwinUpdate) error {
 	var err error
 	obm := dbm.DBAccess
-	obm.Begin()
+	obm.Begin() //开始事务
 	for _, add := range adds {
+		//将add信息写入DB
 		err = SaveDeviceTwin(&add)
 		if err != nil {
 			obm.Rollback()
@@ -110,6 +112,7 @@ func DeviceTwinTrans(adds []DeviceTwin, deletes []DeviceDelete, updates []Device
 	}
 
 	for _, delete := range deletes {
+		//将delete的deviceid从db中删除
 		err = DeleteDeviceTwin(delete.DeviceID, delete.Name)
 		if err != nil {
 			obm.Rollback()
@@ -118,12 +121,13 @@ func DeviceTwinTrans(adds []DeviceTwin, deletes []DeviceDelete, updates []Device
 	}
 
 	for _, update := range updates {
+		//更新deviceID的列和数据
 		err = UpdateDeviceTwinFields(update.DeviceID, update.Name, update.Cols)
 		if err != nil {
 			obm.Rollback()
 			return err
 		}
 	}
-	obm.Commit()
+	obm.Commit() //事务提交
 	return nil
 }

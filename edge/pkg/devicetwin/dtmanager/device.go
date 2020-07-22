@@ -62,12 +62,13 @@ func (dw DeviceWorker) Start() {
 func initDeviceActionCallBack() {
 	//创建CallBack的map
 	deviceActionCallBack = make(map[string]CallBack)
-	//定义callback行为-DeviceUpdate；处理update数据，同步sqlite和context；失败则通过communityWorker发到edge的busgroup
+	//增删和更新device在DB中的属性，同步sqlite和context；失败则通过communityWorker发到edge的busgroup
 	deviceActionCallBack[dtcommon.DeviceUpdated] = dealDeviceUpdated
-	//定义callback行为-DeviceStateUpdate；处理state数据，写入DB，并经过commWorker，发的到edge的busgroup和resource
+	////依据msg更新device在DB中的state和lastOnline，并将结果发布到cloud和edge
 	deviceActionCallBack[dtcommon.DeviceStateUpdate] = dealDeviceStateUpdate
 }
 
+//依据msg更新device的state和lastOnline，并将结果发布到cloud和edge
 func dealDeviceStateUpdate(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	message, ok := msg.(*model.Message)
 	if !ok {
@@ -96,9 +97,9 @@ func dealDeviceStateUpdate(context *dtcontext.DTContext, resource string, msg in
 	}
 	lastOnline := time.Now().Format("2006-01-02 15:04:05")
 	for i := 1; i <= dtcommon.RetryTimes; i++ {
-		//更新state字段，更新为updateDevice.State
+		//更新DB的state字段，更新为updateDevice.State
 		err = dtclient.UpdateDeviceField(device.ID, "state", updateDevice.State)
-		//更新last_online,更新为lastOnline（时间）
+		//更新DB的last_online,更新为lastOnline（时间）
 		err = dtclient.UpdateDeviceField(device.ID, "last_online", lastOnline)
 		if err == nil {
 			break
@@ -123,7 +124,7 @@ func dealDeviceStateUpdate(context *dtcontext.DTContext, resource string, msg in
 		context.BuildModelMessage(modules.BusGroup, "", topic, "publish", payload))
 
 	msgResource := "device/" + device.ID + "/state"
-	//将state和lastOnline写入device，然后发布到communityWorker，传给edge。最终然后给resource，执行update操作
+	//将state和lastOnline写入device，然后发布到communityWorker，传给cloud。最终然后给resource，执行update操作
 	context.Send(deviceID,
 		dtcommon.SendToCloud,
 		dtcommon.CommModule,
@@ -154,7 +155,7 @@ func dealDeviceUpdated(context *dtcontext.DTContext, resource string, msg interf
 }
 
 //DeviceUpdated update device attributes
-//更新device在DB中的属性。写入context中；若写入失败，则发送到communityWorker中，转发到Edge
+//增删和更新device在DB中的属性。写入context中；若写入失败，则发送到communityWorker中，转发到Edge
 func DeviceUpdated(context *dtcontext.DTContext, deviceID string, attributes map[string]*dttype.MsgAttr, baseMessage dttype.BaseMessage, dealType int) (interface{}, error) {
 	klog.Infof("Begin to update attributes of the device %s", deviceID)
 	var err error

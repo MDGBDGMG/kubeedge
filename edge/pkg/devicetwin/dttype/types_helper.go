@@ -220,6 +220,7 @@ type DeviceTwinResult struct {
 }
 
 //BuildDeviceTwinResult build device twin result, 0:get,1:update,2:sync
+//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
 func BuildDeviceTwinResult(baseMessage BaseMessage, twins map[string]*MsgTwin, dealType int) ([]byte, error) {
 	result := make(map[string]*MsgTwin)
 	if dealType == 0 {
@@ -289,10 +290,12 @@ type DeviceTwinDelta struct {
 }
 
 //BuildDeviceTwinDelta  build device twin delta
+//构建一个payload，包含{eventID，timestamp，DeviceTwin，delta}
 func BuildDeviceTwinDelta(baseMessage BaseMessage, twins map[string]*MsgTwin) ([]byte, bool) {
 	result := make(map[string]*MsgTwin)
 	delta := make(map[string]string)
 	for k, v := range twins {
+		//跳过Metadata.Type为deleted的信息
 		if v.Metadata != nil && strings.Compare(v.Metadata.Type, "deleted") == 0 {
 			continue
 		}
@@ -340,6 +343,7 @@ func BuildDeviceTwinDelta(baseMessage BaseMessage, twins map[string]*MsgTwin) ([
 }
 
 //BuildDeviceTwinDocument  build device twin document
+//构建payload，内容为{eventId，timestamp，Twin信息}
 func BuildDeviceTwinDocument(baseMessage BaseMessage, twins map[string]*TwinDoc) ([]byte, bool) {
 
 	payload, err := json.Marshal(DeviceTwinDocument{BaseMessage: baseMessage, Twin: twins})

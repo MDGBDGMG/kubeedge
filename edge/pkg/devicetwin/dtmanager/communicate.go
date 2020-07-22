@@ -66,6 +66,7 @@ func (cw CommWorker) Start() {
 	}
 }
 
+//community
 func initActionCallBack() {
 	ActionCallBack = make(map[string]CallBack)
 	//将message转化格式，发送到websocket的channel中，存入confirmMap中

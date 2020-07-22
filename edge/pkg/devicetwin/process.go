@@ -42,7 +42,7 @@ func (dt *DeviceTwin) RegisterDTModule(name string) {
 
 //distributeMsg distribute message to diff module
 func (dt *DeviceTwin) distributeMsg(m interface{}) error {
-	msg, ok := m.(model.Message)
+	msg, ok := m.(model.Message) //格式转化
 	if !ok {
 		klog.Errorf("Distribute message, msg is nil")
 		return errors.New("Distribute message, msg is nil")
@@ -50,6 +50,7 @@ func (dt *DeviceTwin) distributeMsg(m interface{}) error {
 	message := dttype.DTMessage{Msg: &msg}
 	if message.Msg.GetParentID() != "" {
 		klog.Infof("Send msg to the %s module in twin", dtcommon.CommModule)
+		//格式转化，并将信息发送到communityWorker
 		confirmMsg := dttype.DTMessage{Msg: model.NewMessage(message.Msg.GetParentID()), Action: dtcommon.Confirm}
 		if err := dt.DTContexts.CommTo(dtcommon.CommModule, &confirmMsg); err != nil {
 			return err
@@ -59,12 +60,14 @@ func (dt *DeviceTwin) distributeMsg(m interface{}) error {
 		return errors.New("Not found action")
 	}
 	if ActionModuleMap == nil {
+		//初始化ActionModuleMap
 		initActionModuleMap()
 	}
-
+	//若msg的action符合上述Map
 	if moduleName, exist := ActionModuleMap[message.Action]; exist {
 		//how to deal write channel error
 		klog.Infof("Send msg to the %s module in twin", moduleName)
+		//发送msg到communityWorker
 		if err := dt.DTContexts.CommTo(moduleName, &message); err != nil {
 			return err
 		}
@@ -76,6 +79,7 @@ func (dt *DeviceTwin) distributeMsg(m interface{}) error {
 	return nil
 }
 
+//对msg中对数据的操作进行初始化
 func initEventActionMap() {
 	EventActionMap = make(map[string]map[string]string)
 	EventActionMap[dtcommon.MemETPrefix] = make(map[string]string)
@@ -279,7 +283,7 @@ func (dt *DeviceTwin) runDeviceTwin() {
 		//将module分类进行初始化。
 		//创建Membership、Twin、Device、communicate四个worker
 		dt.RegisterDTModule(v)
-		//启动上述四个worker
+		//启动上述四个worker module
 		go dt.DTModules[v].Start()
 	}
 	go func() {
@@ -291,8 +295,10 @@ func (dt *DeviceTwin) runDeviceTwin() {
 			default:
 
 			}
+			//使用twin的channel接收msg
 			if msg, ok := beehiveContext.Receive("twin"); ok == nil {
 				klog.Info("DeviceTwin receive msg")
+				//校验msg中的Action，并通过community worker发布到相应的module
 				err := dt.distributeMsg(msg)
 				if err != nil {
 					klog.Warningf("distributeMsg failed: %v", err)
@@ -301,8 +307,9 @@ func (dt *DeviceTwin) runDeviceTwin() {
 		}
 	}()
 
-	for {
+	for { //无限循环
 		select {
+		//心跳检查，若120s未接收到心跳，那么重启
 		case <-time.After((time.Duration)(60) * time.Second):
 			//range to check whether has bug
 			for dtmName := range dt.DTModules {
@@ -318,6 +325,7 @@ func (dt *DeviceTwin) runDeviceTwin() {
 			for _, v := range dt.HeartBeatToModule {
 				v <- "ping"
 			}
+			//若接收到终止指令，则停止DeviceTwin
 		case <-beehiveContext.Done():
 			for _, v := range dt.HeartBeatToModule {
 				v <- "stop"
