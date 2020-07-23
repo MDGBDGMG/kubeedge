@@ -73,9 +73,15 @@ func initActionCallBack() {
 	ActionCallBack[dtcommon.SendToCloud] = dealSendToCloud
 	//将msg发送到eventbus的channel中
 	ActionCallBack[dtcommon.SendToEdge] = dealSendToEdge
+
+	//检查云是否已连接，DeviceTwin的状态是否断开连接，然后它会将状态更改为已连接，
+	//并将节点详细信息发送到websocket的channel中。
+	//如果云断开连接，它将DeviceTwin的状态设置为断开连接。
+
 	//初始化一个固定的detail结构体，包装为message，存入confirmMap，发送到websocket
 	ActionCallBack[dtcommon.LifeCycle] = dealLifeCycle
-	//将msg转为message格式，从confirmMap里删掉message.parentID
+
+	//将msg转为message格式，从context.confirmMap里删掉message.parentID
 	ActionCallBack[dtcommon.Confirm] = dealConfirm
 }
 
@@ -97,6 +103,9 @@ func dealSendToCloud(context *dtcontext.DTContext, resource string, msg interfac
 	context.ConfirmMap.Store(msgID, &dttype.DTMessage{Msg: message, Action: dtcommon.SendToCloud, Type: dtcommon.CommModule})
 	return nil, nil
 }
+
+//检查云是否已连接，DeviceTwin的状态是否断开连接，然后它会将状态更改为已连接，并将节点详细信息发送到边缘集线器。
+//如果云断开连接，它将DeviceTwin的状态设置为断开连接。
 func dealLifeCycle(context *dtcontext.DTContext, resource string, msg interface{}) (interface{}, error) {
 	klog.Infof("CONNECTED EVENT")
 	message, ok := msg.(*model.Message)

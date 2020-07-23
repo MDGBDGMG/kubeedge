@@ -85,18 +85,17 @@ func initTwinActionCallBack() {
 		//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；
 		//将更新过的twin信息写入DB
 		//将twin与msgTwin的比较结果，经由community发布到mqtt
-		//将syncResult，经由community发布到cloud
 
 		//SyncDealType为0，即msg来自于mqtt，那么就是将twin的actualversion自己加1
 		twinActionCallBack[dtcommon.TwinUpdate] = dealTwinUpdate
 
-		//校验msg，将msg中包含的twin event包装为payload，发布到edge的mqtt
+		//从msg中获取deviceid，以此从context中获取该id的twin，包装为payload，发布到edge的mqtt
 		twinActionCallBack[dtcommon.TwinGet] = dealTwinGet
 
 		//获取设备twin信息，msgTwin信息，将两者比较并对设备的twin进行更新（add\delete\update）；
 		//将更新过的twin信息写入DB
-		//将twin与msgTwin的比较结果，经由community发布到mqtt
 		//将syncResult，经由community发布到cloud
+		//若需发送doc、result（若有异常）给mqtt，那么经由community发布到mqtt
 
 		//SyncDealType为1，即msg来自于并非，那么就是将cloud的actualversion和exceptversion给twin
 		twinActionCallBack[dtcommon.TwinCloudSync] = dealTwinSync
@@ -407,7 +406,7 @@ func DealGetTwin(context *dtcontext.DTContext, deviceID string, payload []byte) 
 				klog.Errorf("Unmarshal error result error, err: %v", jsonErr)
 				return jsonErr
 			}
-		} else { //若在contex存在payload中的deviceID
+		} else { //若在context存在payload中的deviceID
 			now := time.Now().UnixNano() / 1e6
 			var err error
 			//构建一个结构体，包含{eventid，timestamp，msgtwin}，打包为一个payload
